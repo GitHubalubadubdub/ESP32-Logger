@@ -11,17 +11,6 @@
 DataBuffer<LogRecordV1> psramDataBuffer(PSRAM_BUFFER_SIZE_RECORDS);
 SystemState currentSystemState = STATE_INITIALIZING; // Define currentSystemState here
 
-// Button State Helper Functions (simple polling, no debounce yet)
-// Note: GPIO0 (BOOT) when held low on reset puts ESP32 in bootloader mode.
-// Normal operation should be fine, but be mindful if issues arise during startup.
-bool isButtonAPressed() {
-    return digitalRead(BUTTON_A_PIN) == LOW; // Assuming active-low due to pull-up
-}
-
-bool isButtonBPressed() {
-    return digitalRead(BUTTON_B_PIN) == LOW; // Assuming active-low due to pull-up
-}
-
 void setup() {
     Serial.begin(115200);
     unsigned long startTime = millis();
@@ -50,11 +39,6 @@ void setup() {
     // PSRAM is critical, if not compiled in, this is a configuration error for this app.
     // currentSystemState = STATE_PSRAM_ERROR;
     #endif
-
-    // Configure Button Pins
-    pinMode(BUTTON_A_PIN, INPUT_PULLUP);
-    pinMode(BUTTON_B_PIN, INPUT_PULLUP);
-    Serial.println("Button pins configured.");
 
     // Create FreeRTOS Tasks
     // Priority reminder: Higher number = higher priority
