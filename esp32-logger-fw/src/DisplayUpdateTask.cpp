@@ -71,8 +71,6 @@ void updateDisplay() {
     // Example: Display a piece of data
     // tft.setTextSize(1);
     // tft.setCursor(0, 50);
-    // tft.printf("Speed: %.2f m/s
-", getLatestGpsData().speed_mps); // Assuming getLatestGpsData() exists
-    // tft.printf("Power: %u W
-", getLatestPowerData().power_watts);
+    // tft.printf("Speed: %.2f m/s\n", getLatestGpsData().speed_mps); // Assuming getLatestGpsData() exists
+    // tft.printf("Power: %u W\n", getLatestPowerData().power_watts);
 }
