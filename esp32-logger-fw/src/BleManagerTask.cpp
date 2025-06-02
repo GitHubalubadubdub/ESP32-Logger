@@ -4,31 +4,30 @@
 #include <NimBLEDevice.h>
 #include <vector> // For std::vector
 
-// BLE Service and Characteristic UUIDs (remain the same)
+// BLE Service and Characteristic UUIDs
 static NimBLEUUID CYCLING_POWER_SERVICE_UUID("0x1818");
 static NimBLEUUID CYCLING_POWER_MEASUREMENT_CHAR_UUID("0x2A63");
 
 // --- Shared variables for BLE data and status ---
 static uint16_t currentPower = 0;
 static uint8_t currentCadence = 0;
-static String bleStatus = "Initializing"; // Will be updated: "Scanning", "Select Device", "Connecting", "Connected"
+static String bleStatus = "Initializing";
 static NimBLEClient* pClient = nullptr;
-static boolean connected = false; // True if actively connected to a device
+static boolean connected = false;
 static NimBLERemoteCharacteristic* pPowerMeasurementChar = nullptr;
 
 // --- Variables for device discovery and selection ---
 static std::vector<NimBLEAdvertisedDevice*> discoveredDevicesList;
-static int selectedDeviceIndex = 0; // Default to 0, but check count before use
-static bool scanRunning = false; // Flag to indicate if a scan is in progress
-static bool connectFlag = false; // Flag to trigger connection attempt to selected device
+static int selectedDeviceIndex = 0;
+static bool scanRunning = false;
+static bool connectFlag = false;
 
-// Mutex for thread-safe access to shared variables (power, cadence, status, device list, selectedIndex)
+// Mutex for thread-safe access
 static portMUX_TYPE bleDataMutex = portMUX_INITIALIZER_UNLOCKED;
 
-
-// --- Accessor functions for power, cadence, status (existing, ensure mutex usage) ---
+// --- Accessor functions ---
 uint16_t getPower() {
-    uint16_t power_val; // Renamed to avoid conflict with static global
+    uint16_t power_val;
     portENTER_CRITICAL(&bleDataMutex);
     power_val = currentPower;
     portEXIT_CRITICAL(&bleDataMutex);
@@ -36,7 +35,7 @@ uint16_t getPower() {
 }
 
 uint8_t getCadence() {
-    uint8_t cadence_val; // Renamed
+    uint8_t cadence_val;
     portENTER_CRITICAL(&bleDataMutex);
     cadence_val = currentCadence;
     portEXIT_CRITICAL(&bleDataMutex);
@@ -44,24 +43,23 @@ uint8_t getCadence() {
 }
 
 String getBLEStatus() {
-    String status_val; // Renamed
+    String status_val;
     portENTER_CRITICAL(&bleDataMutex);
     status_val = bleStatus;
     portEXIT_CRITICAL(&bleDataMutex);
     return status_val;
 }
 
-// --- Helper to update status (existing, ensure mutex usage) ---
+// --- Helper functions ---
 static void updateStatus(String newStatus) {
     portENTER_CRITICAL(&bleDataMutex);
-    if (bleStatus != newStatus) { // Only print if status changes
+    if (bleStatus != newStatus) {
         bleStatus = newStatus;
         Serial.println("BLE Status: " + newStatus);
     }
     portEXIT_CRITICAL(&bleDataMutex);
 }
 
-// --- Helper to update power/cadence (existing, ensure mutex usage) ---
 static void updatePowerAndCadence(uint16_t power_val, uint8_t cadence_val) {
     portENTER_CRITICAL(&bleDataMutex);
     currentPower = power_val;
@@ -69,28 +67,81 @@ static void updatePowerAndCadence(uint16_t power_val, uint8_t cadence_val) {
     portEXIT_CRITICAL(&bleDataMutex);
 }
 
-// --- Clear discovered devices list (helper) ---
 static void clearDiscoveredDevices() {
     portENTER_CRITICAL(&bleDataMutex);
     for (auto dev : discoveredDevicesList) {
-        delete dev; // Delete the advertised device object copy
+        delete dev;
     }
     discoveredDevicesList.clear();
-    selectedDeviceIndex = 0; // Reset index
+    selectedDeviceIndex = 0;
     portEXIT_CRITICAL(&bleDataMutex);
 }
 
-// Forward declaration for AdvertisedDeviceCallbacks
-class AdvertisedDeviceCallbacks;
+// --- Forward declaration for notifyCallback ---
+static void notifyCallback(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify);
+
+// --- ClientCallbacks class definition ---
+class ClientCallbacks : public NimBLEClientCallbacks {
+    void onConnect(NimBLEClient* cl) {
+        connected = true;
+        pClient = cl;
+        updateStatus("Connected");
+        Serial.println("Connected. Discovering services...");
+        
+        NimBLERemoteService* pSvc = pClient->getService(CYCLING_POWER_SERVICE_UUID);
+        if (pSvc) {
+            pPowerMeasurementChar = pSvc->getCharacteristic(CYCLING_POWER_MEASUREMENT_CHAR_UUID);
+            if (pPowerMeasurementChar && pPowerMeasurementChar->canNotify()) {
+                if(pPowerMeasurementChar->subscribe(true, notifyCallback)) {
+                    Serial.println("Subscribed to notifications.");
+                } else {
+                     Serial.println("Subscription failed."); pClient->disconnect(); 
+                }
+            } else { Serial.println("Power char not found or no notify."); pClient->disconnect(); }
+        } else { Serial.println("Power service not found."); pClient->disconnect(); }
+    }
+
+    void onDisconnect(NimBLEClient* cl) {
+        connected = false;
+        pPowerMeasurementChar = nullptr;
+        updateStatus("Disconnected");
+        Serial.println("Disconnected.");
+        startBleScan(); 
+    }
+};
+
+// --- AdvertisedDeviceCallbacks class definition ---
+class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
+    void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
+        if (advertisedDevice->isAdvertisingService(CYCLING_POWER_SERVICE_UUID)) {
+            portENTER_CRITICAL(&bleDataMutex);
+            bool found = false;
+            for (auto dev : discoveredDevicesList) {
+                if (dev->getAddress().equals(advertisedDevice->getAddress())) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                if (discoveredDevicesList.size() < 10) {
+                    Serial.print("Found Cycling Power Device: ");
+                    Serial.println(advertisedDevice->toString().c_str());
+                    discoveredDevicesList.push_back(new NimBLEAdvertisedDevice(*advertisedDevice)); 
+                }
+            }
+            portEXIT_CRITICAL(&bleDataMutex);
+        }
+    }
+};
 
 // --- Public functions for discovery and selection ---
 void startBleScan() {
     if (scanRunning) {
-        Serial.println("Scan already in progress.");
+        //Serial.println("Scan already in progress."); // Can be noisy
         return;
     }
-    if (connected) { // Don't scan if already connected
-        Serial.println("Already connected, not starting scan.");
+    if (connected) {
+        //Serial.println("Already connected, not starting scan."); // Can be noisy
         return;
     }
     clearDiscoveredDevices();
@@ -101,22 +152,23 @@ void startBleScan() {
         updateStatus("Scan Error");
         return;
     }
-    pScan->setAdvertisedDeviceCallbacks(nullptr, false); // Clear and do not delete old callbacks object
-    pScan->setAdvertisedDeviceCallbacks(new AdvertisedDeviceCallbacks(), true); // Auto-delete callback after scan
+    pScan->setAdvertisedDeviceCallbacks(nullptr, false); 
+    // The following line is changed as per instruction.
+    // Note: This creates a new callback object each time. If NimBLEScan doesn't delete it, this is a leak.
+    // The previous version with ", true" was likely safer for auto-deletion.
+    pScan->setAdvertisedDeviceCallbacks(new AdvertisedDeviceCallbacks()); 
     pScan->setActiveScan(true);
-    pScan->setInterval(100); // NimBLE units are 0.625ms, so 100 * 0.625ms = 62.5ms
-    pScan->setWindow(99);    // Scan window, should be <= interval
-    // Start scan for a fixed duration (e.g., 5 seconds), non-blocking.
-    // The onScanComplete callback in AdvertisedDeviceCallbacks will handle the "Select Device" state.
+    pScan->setInterval(100); 
+    pScan->setWindow(99);    
     pScan->start(5, [](NimBLEScanResults results){ 
-        scanRunning = false; // Reset flag when scan is complete
+        scanRunning = false; 
         if (getDiscoveredDeviceCount() == 0) {
             updateStatus("No Devices Found");
         } else {
             updateStatus("Select Device");
         }
         Serial.println("Scan ended.");
-    }, false); // The 'false' here means the scan complete callback is a one-shot for this scan
+    }, false); 
     scanRunning = true;
 }
 
@@ -132,7 +184,7 @@ NimBLEAdvertisedDevice* getDiscoveredDevice(int index) {
     NimBLEAdvertisedDevice* device = nullptr;
     portENTER_CRITICAL(&bleDataMutex);
     if (index >= 0 && index < discoveredDevicesList.size()) {
-        device = discoveredDevicesList[index]; // Return pointer, not a copy
+        device = discoveredDevicesList[index]; 
     }
     portEXIT_CRITICAL(&bleDataMutex);
     return device;
@@ -143,7 +195,7 @@ void setSelectedDeviceIndex(int index) {
     int count = discoveredDevicesList.size();
     if (count > 0) { 
       selectedDeviceIndex = index;
-      if (selectedDeviceIndex < 0) selectedDeviceIndex = 0; // Bound checks
+      if (selectedDeviceIndex < 0) selectedDeviceIndex = 0; 
       if (selectedDeviceIndex >= count) selectedDeviceIndex = count - 1;
     } else {
       selectedDeviceIndex = 0;
@@ -162,7 +214,7 @@ int getSelectedDeviceIndex() {
 bool connectToSelectedDevice() {
     if (connected) {
         Serial.println("Already connected.");
-        return true; // Indicate already connected
+        return true; 
     }
     if (scanRunning) {
         NimBLEDevice::getScan()->stop(); 
@@ -176,75 +228,15 @@ bool connectToSelectedDevice() {
     portEXIT_CRITICAL(&bleDataMutex);
 
     if (currentSelection >= 0 && currentSelection < getDiscoveredDeviceCount()) {
-        // No need to create a copy here for connectFlag logic, actual copy for connect() is in main task loop
-        connectFlag = true; // Signal main loop to connect
-        updateStatus("Connecting..."); // Update status early
+        connectFlag = true; 
+        updateStatus("Connecting..."); 
         return true;
     }
     updateStatus("No Device Selected");
     return false;
 }
 
-
-// --- Callbacks (NimBLEAdvertisedDeviceCallbacks, NimBLEClientCallbacks, notifyCallback) ---
-// AdvertisedDeviceCallbacks: modified to add to list
-class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
-    void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
-        // Check only for Cycling Power Service
-        if (advertisedDevice->isAdvertisingService(CYCLING_POWER_SERVICE_UUID)) {
-            portENTER_CRITICAL(&bleDataMutex);
-            bool found = false;
-            for (auto dev : discoveredDevicesList) {
-                if (dev->getAddress().equals(advertisedDevice->getAddress())) {
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                if (discoveredDevicesList.size() < 10) { // Limit number of stored devices
-                    Serial.print("Found Cycling Power Device: ");
-                    Serial.println(advertisedDevice->toString().c_str());
-                    discoveredDevicesList.push_back(new NimBLEAdvertisedDevice(*advertisedDevice)); 
-                }
-            }
-            portEXIT_CRITICAL(&bleDataMutex);
-        }
-    }
-};
-
-// ClientCallbacks: onConnect, onDisconnect (largely same, but manage state for selection mode)
-class ClientCallbacks : public NimBLEClientCallbacks {
-    void onConnect(NimBLEClient* cl) {
-        connected = true; // Set connected true before updating status
-        pClient = cl; 
-        updateStatus("Connected"); // Update status after connected flag is set
-        Serial.println("Connected. Discovering services...");
-        
-        NimBLERemoteService* pSvc = pClient->getService(CYCLING_POWER_SERVICE_UUID);
-        if (pSvc) {
-            pPowerMeasurementChar = pSvc->getCharacteristic(CYCLING_POWER_MEASUREMENT_CHAR_UUID);
-            if (pPowerMeasurementChar && pPowerMeasurementChar->canNotify()) {
-                if(pPowerMeasurementChar->subscribe(true, notifyCallback)) {
-                    Serial.println("Subscribed to notifications.");
-                } else {
-                     Serial.println("Subscription failed."); pClient->disconnect(); 
-                }
-            } else { Serial.println("Power char not found or no notify."); pClient->disconnect(); }
-        } else { Serial.println("Power service not found."); pClient->disconnect(); }
-    }
-
-    void onDisconnect(NimBLEClient* cl) {
-        connected = false; // Set connected false before updating status
-        pPowerMeasurementChar = nullptr;
-        updateStatus("Disconnected"); // Update status after connected flag is set
-        Serial.println("Disconnected.");
-        // pClient = nullptr; // Let pClient be managed by its creator or main loop
-        // After disconnection, automatically start a new scan to allow re-connection or new device selection
-        startBleScan(); 
-    }
-};
-
-// notifyCallback (same as before, simplified parsing for brevity)
+// --- notifyCallback definition ---
 static void notifyCallback(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify) {
     if (pRemoteCharacteristic->getUUID().equals(CYCLING_POWER_MEASUREMENT_CHAR_UUID)) {
         uint16_t flags = 0;
@@ -256,74 +248,69 @@ static void notifyCallback(NimBLERemoteCharacteristic* pRemoteCharacteristic, ui
         offset += 2;
 
         uint8_t cadence_value = 0; 
-        // Simplified cadence parsing based on common Favero format (power meter specific)
-        // Assumes cadence is next if pedal balance is NOT present, or after pedal balance if present.
-        if (! (flags & (1 << 0)) ) { // Pedal Power Balance NOT Present
+        if (! (flags & (1 << 0)) ) { 
             if (length >= offset + 1) cadence_value = pData[offset];
-        } else { // Pedal Power Balance IS Present
-            offset +=1; // Skip Pedal Power Balance byte
+        } else { 
+            offset +=1; 
             if (length >= offset + 1) cadence_value = pData[offset];
         }
         updatePowerAndCadence(power, cadence_value);
     }
 }
 
-
 // --- Main BLE Task ---
 void bleManagerTask(void *pvParameters) {
     Serial.println("BLE Manager Task started");
     NimBLEDevice::init("");
     
-    startBleScan(); // Initial scan
+    startBleScan(); 
 
     for (;;) {
         if (connectFlag) {
-            connectFlag = false; // Reset flag immediately
+            connectFlag = false; 
 
             NimBLEAdvertisedDevice* deviceToConnectCopy = nullptr;
-            int currentSelection; // Local variable to hold index from critical section
+            int currentSelection; 
 
             portENTER_CRITICAL(&bleDataMutex);
             currentSelection = selectedDeviceIndex;
-            // Ensure index is valid before accessing list
             if (currentSelection >= 0 && currentSelection < discoveredDevicesList.size()) {
                 deviceToConnectCopy = new NimBLEAdvertisedDevice(*discoveredDevicesList[currentSelection]);
             }
             portEXIT_CRITICAL(&bleDataMutex);
 
             if (deviceToConnectCopy) {
-                updateStatus("Connecting to: " + String(deviceToConnectCopy->getName().c_str()));
+                // Status "Connecting to: ..." is more specific, but "Connecting..." is already set by connectToSelectedDevice()
+                // For consistency, let's use the more specific one here if the name is available.
+                String deviceName = deviceToConnectCopy->getName().c_str();
+                if (deviceName.length() == 0) deviceName = deviceToConnectCopy->getAddress().toString().c_str();
+                updateStatus("Connecting to: " + deviceName);
+
 
                 if (pClient == nullptr) { 
                     pClient = NimBLEDevice::createClient();
-                    pClient->setClientCallbacks(new ClientCallbacks(), false); // false: do not delete on disconnect
-                    pClient->setConnectionParams(12, 12, 0, 51); // Fast params
+                    pClient->setClientCallbacks(new ClientCallbacks(), false); 
+                    pClient->setConnectionParams(12, 12, 0, 51); 
                 } else if (pClient->isConnected()) {
                      Serial.println("connectFlag set but already connected. Ignoring.");
                      delete deviceToConnectCopy;
                      deviceToConnectCopy = nullptr;
-                     continue; // Skip to next iteration
+                     continue; 
                 }
                 
-                bool connectResult = pClient->connect(deviceToConnectCopy); // This is blocking
+                bool connectResult = pClient->connect(deviceToConnectCopy); 
                 
                 if (!connectResult) {
                     updateStatus("Connection Failed");
-                    // pClient might be in an invalid state, but NimBLE might handle it.
-                    // If we were to delete pClient, it should be done carefully.
-                    // NimBLEDevice::deleteClient(pClient); pClient = nullptr;
-                    startBleScan(); // If connection fails, rescan
+                    startBleScan(); 
                 }
-                // If connect() is successful, onConnect callback handles status update ("Connected")
-                // If it fails, onDisconnect might not be called if connection was never established.
-                
-                delete deviceToConnectCopy; // Delete the copy we made for connect()
+                delete deviceToConnectCopy; 
                 deviceToConnectCopy = nullptr;
             } else {
                 updateStatus("Selected device invalid.");
-                startBleScan(); // Rescan if selected device was invalid
+                startBleScan(); 
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(200)); // Main task loop delay
+        vTaskDelay(pdMS_TO_TICKS(200)); 
     }
 }

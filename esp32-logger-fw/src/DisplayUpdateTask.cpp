@@ -144,7 +144,7 @@ void updateDisplay() {
             }
              tft.setCursor(5, tft.height() - 12); // Position for footer instructions
              tft.setTextSize(1);
-             tft.setTextColor(ST77XX_LIGHTGREY);
+             tft.setTextColor(ST77XX_CYAN);
              tft.print("A:Next, B:Connect");
         }
     } else if (currentBLEStatus == "Connected") {
