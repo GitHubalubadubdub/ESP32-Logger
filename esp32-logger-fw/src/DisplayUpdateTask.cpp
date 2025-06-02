@@ -15,7 +15,7 @@
 // #define TFT_DC        40 
 // #define TFT_RST       41 
 // MOSI: 35, SCK: 36 // These are often fixed by SPIClass
-#define TFT_BL        42 // Backlight pin might still be needed if not in variant
+// #define TFT_BL        42 // Removed, using TFT_BACKLITE from board variant
 Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST); // TFT_CS, TFT_DC, TFT_RST should be defined in pins_arduino.h
 GFXcanvas16 canvas(240, 135); // Added canvas
 
@@ -44,27 +44,29 @@ void displayUpdateTask(void *pvParameters) {
         return;
     }
 
-    static int counter = 0; // Simple counter for demonstration
-    for (;;) {
-        canvas.fillScreen(ST77XX_BLACK);
-        canvas.setTextSize(2); // Use a reasonable text size
-        canvas.setTextColor(ST77XX_WHITE);
-        canvas.setCursor(10, 10);
-        canvas.print("Hello TFT!");
-        canvas.setCursor(10, 30);
-        canvas.print("Count: ");
-        canvas.print(counter++);
+    tft.fillScreen(ST77XX_BLUE); // Fill screen with BLUE
+    Serial.println("Attempted to fill screen BLUE.");
+    vTaskDelay(pdMS_TO_TICKS(1000)); 
 
-        tft.drawRGBBitmap(0, 0, canvas.getBuffer(), 240, 135);
-        
-        vTaskDelay(pdMS_TO_TICKS(1000)); // Update every second
+    // static int counter = 0; // Simple counter for demonstration - REMOVED for new loop
+    for (;;) {
+        static bool toggle = false;
+        if (toggle) {
+            tft.fillScreen(ST77XX_RED);
+            Serial.println("Attempted to fill screen RED.");
+        } else {
+            tft.fillScreen(ST77XX_GREEN);
+            Serial.println("Attempted to fill screen GREEN.");
+        }
+        toggle = !toggle;
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
 // --- Display Initialization ---
 bool initializeDisplay() {
-    pinMode(TFT_BL, OUTPUT);
-    digitalWrite(TFT_BL, HIGH);
+    pinMode(TFT_BACKLITE, OUTPUT);
+    digitalWrite(TFT_BACKLITE, HIGH);
     tft.init(135, 240); // Initialize ST7789 with 135x240 for landscape after rotation
     tft.setRotation(3); 
     // Remove direct tft.fillScreen, tft.setTextColor, tft.setTextSize, tft.setCursor, tft.println
