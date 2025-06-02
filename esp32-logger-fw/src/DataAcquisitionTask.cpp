@@ -89,8 +89,7 @@ void dataAcquisitionTask(void *pvParameters) {
 
         // Debug print (optional, remove for performance in final version)
         // if (currentRecord.system_timestamp_ms % 1000 == 0) { // Print once per second
-        //    Serial.printf("Logged @ %lu ms. Pwr: %uW, Cad: %u RPM. Buffer: %d/%d
-",
+        //    Serial.printf("Logged @ %lu ms. Pwr: %uW, Cad: %u RPM. Buffer: %d/%d\n",
         //                  currentRecord.system_timestamp_ms,
         //                  currentRecord.power_watts,
         //                  currentRecord.cadence_rpm,

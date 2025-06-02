@@ -68,8 +68,7 @@ bool initializeSDCard() {
     // else if (cardType == CARD_SDHC) Serial.println("SDHC");
     // else Serial.println("UNKNOWN");
     // uint64_t cardSize = SD.cardSize() / (1024 * 1024);
-    // Serial.printf("SD Card Size: %lluMB
-", cardSize);
+    // Serial.printf("SD card size: %llu MB\n", cardSize);
     // return true;
     return false; // Placeholder
 }

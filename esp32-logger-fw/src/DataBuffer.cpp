@@ -30,8 +30,7 @@ bool DataBuffer<T>::initialize() {
     #if CONFIG_SPIRAM_SUPPORT
     if (psramFound()) {
         buffer = (T*) ps_malloc(capacity * sizeof(T));
-        Serial.printf("PSRAM: Attempted to allocate %d bytes for buffer.
-", capacity * sizeof(T));
+        Serial.printf("PSRAM: Attempted to allocate %d bytes for buffer.\n", capacity * sizeof(T));
     } else {
         Serial.println("PSRAM not available, DataBuffer not allocating in PSRAM.");
         // Fallback to heap if desired, or fail
@@ -51,8 +50,7 @@ bool DataBuffer<T>::initialize() {
     head = 0;
     tail = 0;
     count = 0;
-    Serial.printf("DataBuffer initialized with capacity for %d records.
-", capacity);
+    Serial.printf("DataBuffer initialized with capacity for %d records.\n", capacity);
     return true;
 }
 
