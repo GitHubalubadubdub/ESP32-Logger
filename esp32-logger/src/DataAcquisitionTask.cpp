@@ -1,85 +1,90 @@
 #include "DataAcquisitionTask.h"
-#include "PSRAMBuffer.h" // To write data to buffer
-#include "SensorModules.h" // To get data from sensors
-#include <Arduino.h> // Required for FreeRTOS.h
-#include <FreeRTOS.h> // Required for task utilities
+#include "config.h"
+#include "DataBuffer.h" // To write to PSRAM buffer
+#include <HardwareSerial.h> // For GPS
 
-// Task handle for the data acquisition task
-TaskHandle_t xDataAcquisitionTaskHandle = NULL;
+// Sensor library includes will go here
+// e.g. #include <TinyGPS++.h>
+// e.g. #include <Adafruit_MPU6050.h>
 
-// Timer handle for 200Hz triggering (if using a software timer)
-TimerHandle_t xDataTimer = NULL;
+// Global or static variables for sensor objects and data
+// TinyGPSPlus gps;
+// HardwareSerial gpsSerial(1); // UART1 for GPS
 
-volatile bool data_acquisition_active = false;
+// Adafruit_MPU6050 mpu; // Example for MPU6050
 
-// This function will be called by the timer or an ISR
-void IRAM_ATTR onTimer() {
-    // Give a semaphore or set a flag to unblock dataAcquisitionTask
-    // For simplicity here, we'll use a flag and the task will poll it,
-    // but a semaphore would be more efficient.
-    // This is a placeholder for the actual trigger mechanism.
-    // A hardware timer ISR would be best for 200Hz.
-}
-
-void initializeDataAcquisition() {
-    Serial.println("Initializing Data Acquisition...");
-    // TODO: Setup a hardware timer for precise 200Hz triggering
-    // For now, this is a placeholder.
-    // Example: xDataTimer = xTimerCreate("DataTimer", pdMS_TO_TICKS(5), pdTRUE, (void *)0, onTimer);
-    // xTimerStart(xDataTimer, 0);
-    data_acquisition_active = true; // Placeholder
-    Serial.println("Data Acquisition initialized.");
-}
+extern DataBuffer<LogRecordV1> psramDataBuffer; // Assuming global buffer object
 
 void dataAcquisitionTask(void *pvParameters) {
     Serial.println("Data Acquisition Task started");
-    LogRecordV1 current_record;
 
-    // Initialize last known values (or set to NAN/default)
-    // These would be updated by sensor modules when new data is available
-    current_record.gps_latitude = NAN;
-    current_record.gps_longitude = NAN;
-    current_record.gps_altitude = NAN;
-    current_record.gps_speed_mps = NAN;
-    current_record.gps_sats = 0;
-    current_record.gps_fix_type = 0;
-    current_record.power_watts = 0;
-    current_record.cadence_rpm = 0;
-    // ... initialize other fields ...
-    for(int i=0; i<8; ++i) current_record.analog_ch[i] = NAN;
+    // Initialize sensors
+    // initializeGPS();
+    // initializeIMU();
 
+    TickType_t xLastWakeTime;
+    const TickType_t xFrequency = pdMS_TO_TICKS(DATA_ACQUISITION_INTERVAL_MS);
+    xLastWakeTime = xTaskGetTickCount();
 
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(5); // 200Hz
+    LogRecordV1 currentRecord;
 
-    while (data_acquisition_active) {
-        vTaskDelayUntil(&xLastWakeTime, xFrequency); // Precise 200Hz loop
+    for (;;) {
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
 
-        current_record.system_timestamp_ms = millis(); // Or use FreeRTOS tick count or RTC
+        // 1. Populate system_timestamp_ms
+        currentRecord.system_timestamp_ms = millis(); // Or use FreeRTOS tick count or RTC
 
-        // --- GPS Data ---
-        // In a real scenario, GPS data is updated by its own task/ISR
-        // Here, we just use the last known value or fetch if available
-        // getLatestGPSData(&current_record); // Example function call
+        // 2. Get GPS Data
+        // if (gps.available(gpsSerial)) { /* parse data */ }
+        // currentRecord.gps_latitude = ...;
+        // currentRecord.gps_longitude = ...;
+        // ... (use previously received value if no new data)
 
-        // --- Power Meter Data ---
-        // BLE data also comes asynchronously
-        // getLatestPowerData(&current_record); // Example function call
+        // 3. Get IMU Data
+        // sensors_event_t a, g, temp;
+        // mpu.getEvent(&a, &g, &temp);
+        // currentRecord.imu_accel_x_mps2 = a.acceleration.x;
+        // ...
 
-        // --- IMU Data ---
-        // IMU should be read directly here for 200Hz
-        readIMU(&current_record.imu_accel_x_mps2, &current_record.imu_accel_y_mps2, &current_record.imu_accel_z_mps2,
-                &current_record.imu_gyro_x_radps, &current_record.imu_gyro_y_radps, &current_record.imu_gyro_z_radps);
+        // 4. Get Power Meter Data (BLE)
+        // currentRecord.power_watts = ...;
+        // currentRecord.cadence_rpm = ...;
 
-        // --- Analog Channels (Placeholder) ---
-        // For now, they remain NAN or zero as initialized
-
-        // Write to PSRAM Buffer
-        if (!writeToPSRAMBuffer(&current_record)) {
-            Serial.println("Error: Failed to write to PSRAM Buffer!");
-            // Handle buffer full or error condition
+        // 5. Get Analog Channels Data (Placeholder)
+        for (int i = 0; i < 8; ++i) {
+            currentRecord.analog_ch[i] = NAN; // Or 0.0f
         }
-        // Serial.print("."); // Debug: indicate a record was "processed"
+
+        // 6. Write to PSRAM Buffer
+        // if (!psramDataBuffer.isFull()) {
+        //     psramDataBuffer.write(currentRecord);
+        // } else {
+        //     Serial.println("PSRAM Buffer Full! Data lost.");
+        //     // Handle buffer full scenario (e.g., set error state)
+        // }
+
+        // Debug print (optional, remove for performance)
+        // Serial.printf("Logged @ %lu ms. AccX: %.2f
+", currentRecord.system_timestamp_ms, currentRecord.imu_accel_x_mps2);
     }
-    vTaskDelete(NULL); // Clean up task if loop exits
+}
+
+bool initializeGPS() {
+    // gpsSerial.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
+    // Serial.println("GPS UART Initialized.");
+    // return true;
+    return false; // Placeholder
+}
+
+bool initializeIMU() {
+    // if (!mpu.begin(0x68, &Wire, 0)) { // Address, I2C bus, sensor ID
+    //    Serial.println("Failed to find MPU6050 chip");
+    //    return false;
+    // }
+    // Serial.println("MPU6050 Found!");
+    // mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+    // mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+    // mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+    // return true;
+    return false; // Placeholder
 }

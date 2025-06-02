@@ -2,9 +2,12 @@
 #define SD_LOGGING_TASK_H
 
 #include <Arduino.h>
-#include "DataStructures.h"
+#include "types.h" // For LogRecordV1
 
 void sdLoggingTask(void *pvParameters);
-bool initializeSDCard(); // For SD card setup
+
+bool initializeSDCard();
+void createNewLogFile();
+void closeLogFile();
 
 #endif // SD_LOGGING_TASK_H
