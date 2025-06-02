@@ -18,6 +18,11 @@
 #define SD_SCK_PIN  GPIO_NUM_36
 #define SD_CS_PIN   GPIO_NUM_34
 
+// Buttons (ESP32-S3 Reverse TFT Feather)
+#define BUTTON_A_PIN GPIO_NUM_0  // BOOT/D0 button
+#define BUTTON_B_PIN GPIO_NUM_1  // USER/D1 button
+// #define BUTTON_C_PIN GPIO_NUM_XX // If a third button was identified
+
 // TFT Display (Built-in, specific pins managed by library, but good to note)
 // #define TFT_CS   PIN_D5 // Example, check board schematic
 // #define TFT_DC   PIN_D6 // Example

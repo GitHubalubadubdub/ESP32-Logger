@@ -1,254 +1,270 @@
 #include "BleManagerTask.h"
-#include "config.h" // May not be needed directly yet
+#include "config.h"
 
-#include <NimBLEDevice.h> // Main NimBLE library
+#include <NimBLEDevice.h>
+#include <vector> // For std::vector
 
-// BLE Service and Characteristic UUIDs
+// BLE Service and Characteristic UUIDs (remain the same)
 static NimBLEUUID CYCLING_POWER_SERVICE_UUID("0x1818");
 static NimBLEUUID CYCLING_POWER_MEASUREMENT_CHAR_UUID("0x2A63");
-// static NimBLEUUID CYCLING_POWER_FEATURE_CHAR_UUID("0x2A65"); // Optional: To check supported features
-// static NimBLEUUID CSC_MEASUREMENT_CHAR_UUID("0x2A5B"); // For cadence if separate. Note: Cadence is often part of 0x2A63
 
-// Shared variables for BLE data
+// --- Shared variables for BLE data and status ---
 static uint16_t currentPower = 0;
 static uint8_t currentCadence = 0;
-static String bleStatus = "Initializing";
-static NimBLEAdvertisedDevice* foundDevice = nullptr;
+static String bleStatus = "Initializing"; // Will be updated: "Scanning", "Select Device", "Connecting", "Connected"
 static NimBLEClient* pClient = nullptr;
-static boolean doConnect = false;
-static boolean connected = false;
+static boolean connected = false; // True if actively connected to a device
 static NimBLERemoteCharacteristic* pPowerMeasurementChar = nullptr;
 
-// Mutex for thread-safe access to shared variables
+// --- Variables for device discovery and selection ---
+static std::vector<NimBLEAdvertisedDevice*> discoveredDevicesList;
+static int selectedDeviceIndex = 0; // Default to 0, but check count before use
+static bool scanRunning = false; // Flag to indicate if a scan is in progress
+static bool connectFlag = false; // Flag to trigger connection attempt to selected device
+
+// Mutex for thread-safe access to shared variables (power, cadence, status, device list, selectedIndex)
 static portMUX_TYPE bleDataMutex = portMUX_INITIALIZER_UNLOCKED;
 
-// Accessor functions for other tasks
+
+// --- Accessor functions for power, cadence, status (existing, ensure mutex usage) ---
 uint16_t getPower() {
-    uint16_t power;
+    uint16_t power_val; // Renamed to avoid conflict with static global
     portENTER_CRITICAL(&bleDataMutex);
-    power = currentPower;
+    power_val = currentPower;
     portEXIT_CRITICAL(&bleDataMutex);
-    return power;
+    return power_val;
 }
 
 uint8_t getCadence() {
-    uint8_t cadence;
+    uint8_t cadence_val; // Renamed
     portENTER_CRITICAL(&bleDataMutex);
-    cadence = currentCadence;
+    cadence_val = currentCadence;
     portEXIT_CRITICAL(&bleDataMutex);
-    return cadence;
+    return cadence_val;
 }
 
 String getBLEStatus() {
-    String status;
+    String status_val; // Renamed
     portENTER_CRITICAL(&bleDataMutex);
-    status = bleStatus;
+    status_val = bleStatus;
     portEXIT_CRITICAL(&bleDataMutex);
-    return status;
+    return status_val;
 }
 
+// --- Helper to update status (existing, ensure mutex usage) ---
 static void updateStatus(String newStatus) {
     portENTER_CRITICAL(&bleDataMutex);
-    bleStatus = newStatus;
+    if (bleStatus != newStatus) { // Only print if status changes
+        bleStatus = newStatus;
+        Serial.println("BLE Status: " + newStatus);
+    }
     portEXIT_CRITICAL(&bleDataMutex);
-    Serial.println("BLE Status: " + newStatus);
 }
 
-static void updatePowerAndCadence(uint16_t power, uint8_t cadence) {
+// --- Helper to update power/cadence (existing, ensure mutex usage) ---
+static void updatePowerAndCadence(uint16_t power_val, uint8_t cadence_val) {
     portENTER_CRITICAL(&bleDataMutex);
-    currentPower = power;
-    currentCadence = cadence;
+    currentPower = power_val;
+    currentCadence = cadence_val;
     portEXIT_CRITICAL(&bleDataMutex);
-    // Serial.printf("Power: %u W, Cadence: %u RPM
-", power, cadence); // Too verbose for regular updates
+}
+
+// --- Clear discovered devices list (helper) ---
+static void clearDiscoveredDevices() {
+    portENTER_CRITICAL(&bleDataMutex);
+    for (auto dev : discoveredDevicesList) {
+        delete dev; // Delete the advertised device object copy
+    }
+    discoveredDevicesList.clear();
+    selectedDeviceIndex = 0; // Reset index
+    portEXIT_CRITICAL(&bleDataMutex);
+}
+
+// Forward declaration for AdvertisedDeviceCallbacks
+class AdvertisedDeviceCallbacks;
+
+// --- Public functions for discovery and selection ---
+void startBleScan() {
+    if (scanRunning) {
+        Serial.println("Scan already in progress.");
+        return;
+    }
+    if (connected) { // Don't scan if already connected
+        Serial.println("Already connected, not starting scan.");
+        return;
+    }
+    clearDiscoveredDevices();
+    updateStatus("Scanning...");
+    NimBLEScan* pScan = NimBLEDevice::getScan();
+    if (pScan == nullptr) {
+        Serial.println("Failed to get BLE Scan object");
+        updateStatus("Scan Error");
+        return;
+    }
+    pScan->setAdvertisedDeviceCallbacks(nullptr, false); // Clear and do not delete old callbacks object
+    pScan->setAdvertisedDeviceCallbacks(new AdvertisedDeviceCallbacks(), true); // Auto-delete callback after scan
+    pScan->setActiveScan(true);
+    pScan->setInterval(100); // NimBLE units are 0.625ms, so 100 * 0.625ms = 62.5ms
+    pScan->setWindow(99);    // Scan window, should be <= interval
+    // Start scan for a fixed duration (e.g., 5 seconds), non-blocking.
+    // The onScanComplete callback in AdvertisedDeviceCallbacks will handle the "Select Device" state.
+    pScan->start(5, [](NimBLEScanResults results){ 
+        scanRunning = false; // Reset flag when scan is complete
+        if (getDiscoveredDeviceCount() == 0) {
+            updateStatus("No Devices Found");
+        } else {
+            updateStatus("Select Device");
+        }
+        Serial.println("Scan ended.");
+    }, false); // The 'false' here means the scan complete callback is a one-shot for this scan
+    scanRunning = true;
+}
+
+int getDiscoveredDeviceCount() {
+    int count;
+    portENTER_CRITICAL(&bleDataMutex);
+    count = discoveredDevicesList.size();
+    portEXIT_CRITICAL(&bleDataMutex);
+    return count;
+}
+
+NimBLEAdvertisedDevice* getDiscoveredDevice(int index) {
+    NimBLEAdvertisedDevice* device = nullptr;
+    portENTER_CRITICAL(&bleDataMutex);
+    if (index >= 0 && index < discoveredDevicesList.size()) {
+        device = discoveredDevicesList[index]; // Return pointer, not a copy
+    }
+    portEXIT_CRITICAL(&bleDataMutex);
+    return device;
+}
+
+void setSelectedDeviceIndex(int index) {
+    portENTER_CRITICAL(&bleDataMutex);
+    int count = discoveredDevicesList.size();
+    if (count > 0) { 
+      selectedDeviceIndex = index;
+      if (selectedDeviceIndex < 0) selectedDeviceIndex = 0; // Bound checks
+      if (selectedDeviceIndex >= count) selectedDeviceIndex = count - 1;
+    } else {
+      selectedDeviceIndex = 0;
+    }
+    portEXIT_CRITICAL(&bleDataMutex);
+}
+
+int getSelectedDeviceIndex() {
+    int index;
+    portENTER_CRITICAL(&bleDataMutex);
+    index = selectedDeviceIndex;
+    portEXIT_CRITICAL(&bleDataMutex);
+    return index;
+}
+
+bool connectToSelectedDevice() {
+    if (connected) {
+        Serial.println("Already connected.");
+        return true; // Indicate already connected
+    }
+    if (scanRunning) {
+        NimBLEDevice::getScan()->stop(); 
+        scanRunning = false;
+        Serial.println("Scan stopped for connection attempt.");
+    }
+
+    int currentSelection;
+    portENTER_CRITICAL(&bleDataMutex);
+    currentSelection = selectedDeviceIndex;
+    portEXIT_CRITICAL(&bleDataMutex);
+
+    if (currentSelection >= 0 && currentSelection < getDiscoveredDeviceCount()) {
+        // No need to create a copy here for connectFlag logic, actual copy for connect() is in main task loop
+        connectFlag = true; // Signal main loop to connect
+        updateStatus("Connecting..."); // Update status early
+        return true;
+    }
+    updateStatus("No Device Selected");
+    return false;
 }
 
 
-// --- Forward declarations for callbacks ---
-class ClientCallbacks : public NimBLEClientCallbacks {
-    void onConnect(NimBLEClient* pClient_param);
-    void onDisconnect(NimBLEClient* pClient_param);
-};
-
-static void notifyCallback(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify);
-
-/**
- * Scan for BLE servers and find the first one that advertises the Cycling Power Service.
- */
+// --- Callbacks (NimBLEAdvertisedDeviceCallbacks, NimBLEClientCallbacks, notifyCallback) ---
+// AdvertisedDeviceCallbacks: modified to add to list
 class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
-        Serial.print("Advertised Device found: ");
-        Serial.println(advertisedDevice->toString().c_str());
+        // Check only for Cycling Power Service
         if (advertisedDevice->isAdvertisingService(CYCLING_POWER_SERVICE_UUID)) {
-            Serial.println("Found Cycling Power Service!");
-            updateStatus("Device Found");
-            NimBLEDevice::getScan()->stop(); // Stop scan before connecting
-            if(foundDevice != nullptr) { // Manage memory if a device was previously found but not connected
-                delete foundDevice;
-                foundDevice = nullptr;
+            portENTER_CRITICAL(&bleDataMutex);
+            bool found = false;
+            for (auto dev : discoveredDevicesList) {
+                if (dev->getAddress().equals(advertisedDevice->getAddress())) {
+                    found = true;
+                    break;
+                }
             }
-            foundDevice = new NimBLEAdvertisedDevice(*advertisedDevice);
-            doConnect = true;
+            if (!found) {
+                if (discoveredDevicesList.size() < 10) { // Limit number of stored devices
+                    Serial.print("Found Cycling Power Device: ");
+                    Serial.println(advertisedDevice->toString().c_str());
+                    discoveredDevicesList.push_back(new NimBLEAdvertisedDevice(*advertisedDevice)); 
+                }
+            }
+            portEXIT_CRITICAL(&bleDataMutex);
         }
     }
 };
 
-// --- Client Callbacks Implementation ---
-void ClientCallbacks::onConnect(NimBLEClient* cl) {
-    updateStatus("Connected");
-    connected = true;
-    pClient = cl; // Assign the connected client to the global pClient
-    Serial.println("Connected to server. Discovering services...");
-
-    NimBLERemoteService* pSvc = nullptr;
-    NimBLERemoteCharacteristic* pChar = nullptr;
-
-    // 1. Get the Cycling Power service
-    pSvc = pClient->getService(CYCLING_POWER_SERVICE_UUID);
-    if (pSvc) {
-        Serial.println("Cycling Power Service found.");
-        // 2. Get the Cycling Power Measurement characteristic
-        pPowerMeasurementChar = pSvc->getCharacteristic(CYCLING_POWER_MEASUREMENT_CHAR_UUID);
-        if (pPowerMeasurementChar) {
-            Serial.println("Cycling Power Measurement Characteristic found.");
-            // 3. Register for notifications
-            if (pPowerMeasurementChar->canNotify()) {
-                if (pPowerMeasurementChar->subscribe(true, notifyCallback)) {
-                    updateStatus("Subscribed to Notifications");
-                    Serial.println("Subscribed to power measurement notifications.");
+// ClientCallbacks: onConnect, onDisconnect (largely same, but manage state for selection mode)
+class ClientCallbacks : public NimBLEClientCallbacks {
+    void onConnect(NimBLEClient* cl) {
+        connected = true; // Set connected true before updating status
+        pClient = cl; 
+        updateStatus("Connected"); // Update status after connected flag is set
+        Serial.println("Connected. Discovering services...");
+        
+        NimBLERemoteService* pSvc = pClient->getService(CYCLING_POWER_SERVICE_UUID);
+        if (pSvc) {
+            pPowerMeasurementChar = pSvc->getCharacteristic(CYCLING_POWER_MEASUREMENT_CHAR_UUID);
+            if (pPowerMeasurementChar && pPowerMeasurementChar->canNotify()) {
+                if(pPowerMeasurementChar->subscribe(true, notifyCallback)) {
+                    Serial.println("Subscribed to notifications.");
                 } else {
-                    updateStatus("Subscription Failed");
-                    Serial.println("Failed to subscribe to notifications.");
-                    pClient->disconnect(); // Disconnect if subscription fails
+                     Serial.println("Subscription failed."); pClient->disconnect(); 
                 }
-            } else {
-                updateStatus("Notify Not Supported");
-                Serial.println("Power measurement characteristic does not support notifications.");
-                pClient->disconnect();
-            }
-        } else {
-            updateStatus("Char Not Found");
-            Serial.println("Cycling Power Measurement Characteristic not found.");
-            pClient->disconnect();
-        }
-    } else {
-        updateStatus("Service Not Found");
-        Serial.println("Cycling Power Service not found.");
-        pClient->disconnect();
+            } else { Serial.println("Power char not found or no notify."); pClient->disconnect(); }
+        } else { Serial.println("Power service not found."); pClient->disconnect(); }
     }
-}
 
-void ClientCallbacks::onDisconnect(NimBLEClient* cl) {
-    updateStatus("Disconnected");
-    connected = false;
-    pPowerMeasurementChar = nullptr; // Clear characteristic pointer
-    // pClient = nullptr; // Client pointer is managed by NimBLE, or deleted if created with 'new' explicitly.
-                      // Re-creating client on next connection attempt if it's null.
-    Serial.println("Disconnected from server.");
-    // Consider adding a delay or specific logic before allowing automatic rescan/reconnect
-}
+    void onDisconnect(NimBLEClient* cl) {
+        connected = false; // Set connected false before updating status
+        pPowerMeasurementChar = nullptr;
+        updateStatus("Disconnected"); // Update status after connected flag is set
+        Serial.println("Disconnected.");
+        // pClient = nullptr; // Let pClient be managed by its creator or main loop
+        // After disconnection, automatically start a new scan to allow re-connection or new device selection
+        startBleScan(); 
+    }
+};
 
-// --- Notify Callback Implementation ---
+// notifyCallback (same as before, simplified parsing for brevity)
 static void notifyCallback(NimBLERemoteCharacteristic* pRemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify) {
     if (pRemoteCharacteristic->getUUID().equals(CYCLING_POWER_MEASUREMENT_CHAR_UUID)) {
-        // Parse Cycling Power Measurement data (ตาม Bluetooth SIG XML for 0x2A63)
-        // Flags (first 2 bytes, little endian)
-        // uint16_t flags = (pData[1] << 8) | pData[0];
+        uint16_t flags = 0;
+        if (length >=2) flags = *((uint16_t*)pData); 
         
-        uint8_t offset = 2; // Start after flags
-
-        // Instantaneous Power (SINT16, Watts)
-        int16_t power = (pData[offset+1] << 8) | pData[offset];
+        uint8_t offset = 2; 
+        int16_t power = 0;
+        if (length >= offset + 2) power = (pData[offset+1] << 8) | pData[offset];
         offset += 2;
 
-        uint8_t cadence_value = 0; // Default to 0
-
-        // Check Flags for Cadence data (Bit 5: Crank Revolution Data Present)
-        // The exact structure depends on the Cycling Power Measurement characteristic's definition.
-        // A common format is: Flags (2 bytes), Inst Power (2 bytes), Pedal Power Balance (1 byte, if present),
-        // Accumulated Torque (2 bytes, if present), Crank Revolution Data (Cumulative Crank Revs (2 bytes), Last Crank Event Time (2 bytes))
-        // For simplicity, we'll assume if cadence is present, it's directly after power or indicated by flags.
-        // The Favero Assioma typically includes cadence. Let's assume a common payload structure.
-        // For example, if flags bit 5 (0x20) is set, crank revolution data might follow.
-        // However, some power meters send cadence differently or it's part of a combined field.
-        // A simple approach for Favero might be to look at a known byte offset if the payload is fixed,
-        // or more robustly, fully parse according to the flags.
-
-        // Example: A simplified parsing assuming cadence might be at a fixed position or not present.
-        // This part NEEDS to be verified with actual Favero Assioma data format.
-        // The Cycling Power Measurement characteristic has flags that indicate which fields are present.
-        // Bit 0: Pedal Power Balance Present
-        // Bit 1: Pedal Power Balance Reference (0=Unknown, 1=Left)
-        // Bit 2: Accumulated Torque Present
-        // Bit 3: Accumulated Torque Source (0=Wheel, 1=Crank)
-        // Bit 4: Wheel Revolution Data Present
-        // Bit 5: Crank Revolution Data Present (THIS IS CADENCE RELATED)
-        // Bit 6: Extreme Force Magnitudes Present
-        // Bit 7: Extreme Torque Magnitudes Present
-        // Bit 8: Extreme Angles Present
-        // Bit 9: Top Dead Spot Angle Present
-        // Bit 10: Bottom Dead Spot Angle Present
-        // Bit 11: Accumulated Energy Present
-        // Bit 12: Offset Compensation Indicator (1=True)
-
-        uint16_t flags = *((uint16_t*)pData); // Assuming little endian for flags
-
-        // If Crank Revolution Data is present (Bit 5 of flags)
-        if (flags & (1 << 5)) {
-            // Search for Crank Revolution Data fields
-            // This requires skipping optional fields based on other flags if they come before crank data.
-            // For simplicity, let's assume if Pedal Power Balance (bit 0) is present, it's 1 byte.
-            if (flags & (1 << 0)) { // Pedal Power Balance
-                offset += 1; 
-            }
-            // If Accumulated Torque (bit 2) is present, it's 2 bytes.
-            if (flags & (1 << 2)) { // Accumulated Torque
-                offset += 2;
-            }
-            // Now, Crank Revolution Data: Cumulative Crank Revolutions (UINT16) and Last Crank Event Time (UINT16)
-            if (length >= offset + 4) { // Check if there's enough data for crank revs and time
-                // uint16_t cumulativeCrankRevs = (pData[offset+1] << 8) | pData[offset];
-                // uint16_t lastCrankEventTime = (pData[offset+3] << 8) | pData[offset+2];
-                // Cadence is calculated from changes in these two over time.
-                // For many power meters, the "Instantaneous Cadence" field might be sent if flags indicate.
-                // Let's check if "Instantaneous Cadence" (value rpm) is sent directly as part of an extended data field.
-                // The standard characteristic doesn't define a direct "instantaneous cadence" field this way,
-                // it's usually calculated or sent via CSC service.
-                // However, Favero might send it in a non-standard way or rely on the client to calculate from crank events.
-
-                // HACK/PLACEHOLDER: Favero Assioma might put cadence directly in the payload if a certain flag is set,
-                // or it might be part of a combined field.
-                // A common way is to send instantaneous cadence in the "Crank Revolution Data" part.
-                // If flags bit 5 is set, and if the data length allows, let's assume the next byte after power
-                // (and after optional fields like pedal balance) is cadence. This is a guess.
-                // A more robust parser would look at all flags.
-                // Often, if cadence is present, it's the two bytes after power:
-                // Cumulative Crank Revolutions (uint16_t) and Last Crank Event Time (uint16_t).
-                // The actual RPM is usually calculated by the client.
-                // Some devices might put instantaneous cadence in the last byte if the payload is short.
-                
-                // For Favero, it's common to have:
-                // Flags (2 bytes), Inst Power (2 bytes), Inst Cadence (1 byte) when pedal power balance is NOT present.
-                // Flags (2 bytes), Inst Power (2 bytes), Pedal Power Balance (1 byte), Inst Cadence (1 byte) when present.
-                // So, if bit 0 of flags (Pedal Power Balance Present) is 0:
-                if (! (flags & (1 << 0)) ) { // If Pedal Power Balance is NOT present
-                    if (length >= offset + 1) { // Check if cadence byte is there
-                         cadence_value = pData[offset];
-                         // offset += 1; // If there were more fields after
-                    }
-                } else { // If Pedal Power Balance IS present
-                    offset +=1; // Skip Pedal Power Balance byte
-                    if (length >= offset + 1) { // Check if cadence byte is there
-                        cadence_value = pData[offset];
-                        // offset += 1;
-                    }
-                }
-            }
+        uint8_t cadence_value = 0; 
+        // Simplified cadence parsing based on common Favero format (power meter specific)
+        // Assumes cadence is next if pedal balance is NOT present, or after pedal balance if present.
+        if (! (flags & (1 << 0)) ) { // Pedal Power Balance NOT Present
+            if (length >= offset + 1) cadence_value = pData[offset];
+        } else { // Pedal Power Balance IS Present
+            offset +=1; // Skip Pedal Power Balance byte
+            if (length >= offset + 1) cadence_value = pData[offset];
         }
-        
         updatePowerAndCadence(power, cadence_value);
-        // Serial.printf("Raw P: %d, C: %d | Flags: %04X, Length: %d
-", power, cadence_value, flags, length);
     }
 }
 
@@ -256,53 +272,58 @@ static void notifyCallback(NimBLERemoteCharacteristic* pRemoteCharacteristic, ui
 // --- Main BLE Task ---
 void bleManagerTask(void *pvParameters) {
     Serial.println("BLE Manager Task started");
-    updateStatus("BLE Init");
-
-    NimBLEDevice::init(""); 
-    NimBLEScan* pScan = NimBLEDevice::getScan(); 
-    pScan->setAdvertisedDeviceCallbacks(new AdvertisedDeviceCallbacks());
-    pScan->setActiveScan(true); 
-    pScan->setInterval(100);    
-    pScan->setWindow(99);       
-
-    updateStatus("Scanning...");
+    NimBLEDevice::init("");
+    
+    startBleScan(); // Initial scan
 
     for (;;) {
-        if (doConnect) {
-            if (foundDevice != nullptr) {
-                updateStatus("Connecting to: " + String(foundDevice->getAddress().toString().c_str()));
-                
-                if (pClient == nullptr) {
+        if (connectFlag) {
+            connectFlag = false; // Reset flag immediately
+
+            NimBLEAdvertisedDevice* deviceToConnectCopy = nullptr;
+            int currentSelection; // Local variable to hold index from critical section
+
+            portENTER_CRITICAL(&bleDataMutex);
+            currentSelection = selectedDeviceIndex;
+            // Ensure index is valid before accessing list
+            if (currentSelection >= 0 && currentSelection < discoveredDevicesList.size()) {
+                deviceToConnectCopy = new NimBLEAdvertisedDevice(*discoveredDevicesList[currentSelection]);
+            }
+            portEXIT_CRITICAL(&bleDataMutex);
+
+            if (deviceToConnectCopy) {
+                updateStatus("Connecting to: " + String(deviceToConnectCopy->getName().c_str()));
+
+                if (pClient == nullptr) { 
                     pClient = NimBLEDevice::createClient();
-                    pClient->setClientCallbacks(new ClientCallbacks(), false); 
-                    pClient->setConnectionParams(12, 12, 0, 51); // Example: Fast connection params
+                    pClient->setClientCallbacks(new ClientCallbacks(), false); // false: do not delete on disconnect
+                    pClient->setConnectionParams(12, 12, 0, 51); // Fast params
+                } else if (pClient->isConnected()) {
+                     Serial.println("connectFlag set but already connected. Ignoring.");
+                     delete deviceToConnectCopy;
+                     deviceToConnectCopy = nullptr;
+                     continue; // Skip to next iteration
                 }
-
-                // Attempt to connect
-                if (pClient->connect(foundDevice)) { 
-                    Serial.println("Connection attempt successful (may still be handshaking, see onConnect).");
-                    // Service discovery and characteristic subscription now happens in ClientCallbacks::onConnect
-                } else {
-                    Serial.println("Connection attempt failed immediately.");
-                    // If connect() returns false, pClient might be in an invalid state or null.
-                    // Safe to delete and nullify if we created it.
-                    // However, NimBLE might handle this. For safety, if we are to retry, ensure pClient is valid or recreated.
-                    // NimBLEDevice::deleteClient(pClient); // This might be too aggressive.
-                    // pClient = nullptr;
-                    updateStatus("Connect Failed");
+                
+                bool connectResult = pClient->connect(deviceToConnectCopy); // This is blocking
+                
+                if (!connectResult) {
+                    updateStatus("Connection Failed");
+                    // pClient might be in an invalid state, but NimBLE might handle it.
+                    // If we were to delete pClient, it should be done carefully.
+                    // NimBLEDevice::deleteClient(pClient); pClient = nullptr;
+                    startBleScan(); // If connection fails, rescan
                 }
-                delete foundDevice; // We are done with this advertised device object
-                foundDevice = nullptr;
-            }
-            doConnect = false; 
-        }
-
-        if (!connected && !doConnect) {
-            if (!pScan->isScanning()) {
-                 updateStatus("Scanning...");
-                 pScan->start(5, false); // Scan for 5 seconds, then stop. Loop will restart it if needed.
+                // If connect() is successful, onConnect callback handles status update ("Connected")
+                // If it fails, onDisconnect might not be called if connection was never established.
+                
+                delete deviceToConnectCopy; // Delete the copy we made for connect()
+                deviceToConnectCopy = nullptr;
+            } else {
+                updateStatus("Selected device invalid.");
+                startBleScan(); // Rescan if selected device was invalid
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(1000)); 
+        vTaskDelay(pdMS_TO_TICKS(200)); // Main task loop delay
     }
 }
