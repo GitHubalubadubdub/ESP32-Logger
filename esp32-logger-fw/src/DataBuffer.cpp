@@ -51,7 +51,8 @@ bool DataBuffer<T>::initialize() {
     head = 0;
     tail = 0;
     count = 0;
-    Serial.printf("DataBuffer initialized with capacity for %d records.", capacity);
+    Serial.printf("DataBuffer initialized with capacity for %d records.
+", capacity);
     return true;
 }
 

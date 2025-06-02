@@ -3,7 +3,7 @@
 #include "DataAcquisitionTask.h"
 #include "SdLoggingTask.h"
 #include "DisplayUpdateTask.h"
-// #include "BleManagerTask.h" // Uncomment when ready
+#include "BleManagerTask.h" // Make sure this is included
 // #include "WifiHandlerTask.h" // Uncomment when ready
 
 void setup() {
@@ -23,8 +23,8 @@ void setup() {
     // Create FreeRTOS Tasks
     // xTaskCreatePinnedToCore(dataAcquisitionTask, "DataAcqTask", 4096, NULL, 5, NULL, 0); // Core 0 for time-critical
     // xTaskCreatePinnedToCore(sdLoggingTask, "SDLogTask", 4096, NULL, 3, NULL, 1);       // Core 1 for other tasks
-    // xTaskCreatePinnedToCore(displayUpdateTask, "DisplayTask", 4096, NULL, 2, NULL, 1);
-    // xTaskCreatePinnedToCore(bleManagerTask, "BLETask", 4096, NULL, 4, NULL, 1);
+    xTaskCreatePinnedToCore(displayUpdateTask, "DisplayTask", 4096, NULL, 2, NULL, 1); // Ensure this is uncommented
+    xTaskCreatePinnedToCore(bleManagerTask, "BLETask", 8192, NULL, 4, NULL, 1); // Increased stack for BLE
     // xTaskCreatePinnedToCore(wifiHandlerTask, "WiFiTask", 4096, NULL, 3, NULL, 1);
 
     Serial.println("Setup complete. Tasks will start soon.");
