@@ -48,6 +48,18 @@ void displayUpdateTask(void *pvParameters) {
     Serial.println("Attempted to fill screen BLUE.");
     vTaskDelay(pdMS_TO_TICKS(1000)); 
 
+    tft.invertDisplay(true);
+    Serial.println("Attempted to invert display.");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    tft.fillScreen(ST77XX_YELLOW); 
+    Serial.println("Attempted to fill screen YELLOW (after inversion).");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    tft.invertDisplay(false); // Revert for subsequent tests
+    Serial.println("Attempted to revert display inversion.");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
     // static int counter = 0; // Simple counter for demonstration - REMOVED for new loop
     for (;;) {
         static bool toggle = false;
@@ -73,6 +85,7 @@ bool initializeDisplay() {
     // These will be done on the canvas.
     tft.fillScreen(ST77XX_BLACK); // Optionally, fill screen black once on init
     Serial.println("Display Initialized with canvas setup.");
+    vTaskDelay(pdMS_TO_TICKS(100)); // Small delay after init commands
     return true;
 }
 
