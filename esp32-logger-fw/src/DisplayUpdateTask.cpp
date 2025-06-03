@@ -16,7 +16,10 @@
 // #define TFT_RST       41 
 // MOSI: 35, SCK: 36 // These are often fixed by SPIClass
 // #define TFT_BL        42 // Removed, using TFT_BACKLITE from board variant
-Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST); // TFT_CS, TFT_DC, TFT_RST should be defined in pins_arduino.h
+
+SPIClass spi_display(HSPI); // Define SPIClass object for HSPI (Attempting HSPI instead of VSPI)
+
+Adafruit_ST7789 tft = Adafruit_ST7789(&spi_display, TFT_CS, TFT_DC, TFT_RST); // Pass SPIClass pointer
 GFXcanvas16 canvas(240, 135); // Added canvas
 
 // Global system state variable (defined in main.cpp) - REMOVED
@@ -87,8 +90,8 @@ bool initializeDisplay() {
     digitalWrite(TFT_BACKLITE, HIGH);
     // SCK and MOSI should be defined in the board variant (pins_arduino.h)
     // For Adafruit ESP32-S3 TFT Feather: SCK is 36, MOSI is 35.
-    SPI.begin(SCK, -1, MOSI, -1); // Use SCK, MOSI from variant. MISO (-1), CS (-1 as tft object handles it).
-    Serial.println("SPI.begin(SCK, -1, MOSI, -1) called.");
+    spi_display.begin(SCK, -1, MOSI, -1); // SCK & MOSI are from board variant
+    Serial.println("spi_display (HSPI) .begin(SCK, -1, MOSI, -1) called.");
     tft.init(135, 240); // Initialize ST7789 with 135x240 for landscape after rotation
     tft.setRotation(3); 
     // Remove direct tft.fillScreen, tft.setTextColor, tft.setTextSize, tft.setCursor, tft.println
