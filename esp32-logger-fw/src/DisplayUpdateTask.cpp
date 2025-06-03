@@ -66,6 +66,7 @@ void displayUpdateTask(void *pvParameters) {
 
   for (;;) { // Infinite loop for the task
     // --- Button Logic for Mode Switching ---
+    pinMode(MODE_SWITCH_BUTTON_PIN, INPUT_PULLUP);
     Serial.printf("Button D1 (GPIO%d) State: %d\n", MODE_SWITCH_BUTTON_PIN, digitalRead(MODE_SWITCH_BUTTON_PIN));
     if (digitalRead(MODE_SWITCH_BUTTON_PIN) == LOW) {
         if (millis() - lastButtonPressTime > debounceDelay) {
