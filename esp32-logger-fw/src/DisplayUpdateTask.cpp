@@ -1,179 +1,151 @@
 #include "DisplayUpdateTask.h"
 #include "config.h"
-#include "BleManagerTask.h" // To get BLE data AND device list
-#include "DataBuffer.h"     // For LogRecordV1, if displaying buffer status
-#include <Adafruit_GFX.h>
-#include <Adafruit_ST7789.h>
-#include <SPI.h>
 
-// Button helper functions (defined in main.cpp)
-extern bool isButtonAPressed(); 
-extern bool isButtonBPressed();
-
-// TFT Pin definitions and tft object (already defined)
-#define TFT_CS        39 
-#define TFT_DC        40 
-#define TFT_RST       41 
-// MOSI: 35, SCK: 36
-#define TFT_BL        42
-// extern Adafruit_ST7789 tft; // Defined globally in this file in previous step
-Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST); // Re-affirming definition here as per original structure
-
-// Global system state variable (defined in main.cpp)
-extern SystemState currentSystemState; 
-extern DataBuffer<LogRecordV1> psramDataBuffer;
+#include "Adafruit_MAX1704X.h"
+#include <Adafruit_NeoPixel.h>
+#include "Adafruit_TestBed.h"
+#include <Adafruit_BME280.h>
+#include <Adafruit_ST7789.h> 
+#include <Fonts/FreeSans12pt7b.h>
 
 
-// --- Variables for button handling (simple debounce/rate limiting) ---
-static uint32_t lastButtonATime = 0;
-static uint32_t lastButtonBTime = 0;
-const uint32_t buttonDebounceDelay = 250; // ms
+Adafruit_BME280 bme; // I2C
+bool bmefound = false;
+extern Adafruit_TestBed TB;
 
-// --- Forward declarations ---
-void handleButtonInputs();
+Adafruit_MAX17048 lipo;
+Adafruit_ST7789 display = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
+
+GFXcanvas16 canvas(240, 135);
+
+static bool valid_i2c[128]; // File-scope static for access by both functions
+
 bool initializeDisplay(); // Already in .h but good practice for .cpp internal structure
-void updateDisplay();     // Already in .h
+
+static int j = 0; // Keep j static if it's used to alternate states or for initialization checks
 
 // --- Main Display Task ---
 void displayUpdateTask(void *pvParameters) {
-    Serial.println("Display Update Task started");
+  Serial.println("Display Update Task started");
 
-    if (!initializeDisplay()) {
-        Serial.println("Display Initialization Failed!");
-        vTaskDelete(NULL);
-        return;
-    }
-    // currentSystemState is initialized in main.cpp
-    // BleManagerTask will set initial status like "Scanning..."
+  if (!initializeDisplay()) {
+      Serial.println("Display Initialization Failed!");
+      vTaskDelete(NULL);
+      return;
+  }
 
-    for (;;) {
-        handleButtonInputs(); // Process button presses
-        updateDisplay();      // Redraw display contents
-        vTaskDelay(pdMS_TO_TICKS(100)); // Update display and check buttons at ~10Hz
+  Serial.println("**********************");
+
+  for (;;) { // Infinite loop for the task
+    if (j % 2 == 0) { // This condition can be simplified or rethought if j is only incrementing
+      canvas.fillScreen(ST77XX_BLACK);
+      canvas.setCursor(0, 17);
+      canvas.setTextColor(ST77XX_RED);
+      canvas.println("Adafruit Feather");
+      canvas.setTextColor(ST77XX_YELLOW);
+      canvas.println("ESP32-S3 TFT Demo");
+      canvas.setTextColor(ST77XX_GREEN); 
+      canvas.print("Battery: ");
+      canvas.setTextColor(ST77XX_WHITE);
+      canvas.print(lipo.cellVoltage(), 1);
+      canvas.print(" V  /  ");
+      canvas.print(lipo.cellPercent(), 0);
+      canvas.println("%");
+      canvas.setTextColor(ST77XX_BLUE); 
+      canvas.print("I2C: ");
+      canvas.setTextColor(ST77XX_WHITE);
+      for (uint8_t a=0x01; a<=0x7F; a++) {
+        if (valid_i2c[a])  {
+          canvas.print("0x");
+          canvas.print(a, HEX);
+          canvas.print(", ");
+        }
+      }
+      canvas.println("");
+      canvas.print("Buttons: ");
+      Serial.println(digitalRead(0));
+      Serial.println(digitalRead(1));
+      Serial.println(digitalRead(2));
+      if (!digitalRead(0)) {
+        canvas.print("D0, ");
+      }
+      if (digitalRead(1)) {
+        canvas.print("D1, ");
+      }
+      if (digitalRead(2)) {
+        canvas.print("D2, ");
+      }
+      display.drawRGBBitmap(0, 0, canvas.getBuffer(), 240, 135);
+      pinMode(TFT_BACKLITE, OUTPUT);
+      digitalWrite(TFT_BACKLITE, HIGH);
     }
+
+    TB.setColor(TB.Wheel(j++));
+    vTaskDelay(pdMS_TO_TICKS(10)); // Adjusted delay
+  }
 }
 
-// --- Display Initialization (largely same) ---
+// --- Display Initialization ---
 bool initializeDisplay() {
-    pinMode(TFT_BL, OUTPUT);
-    digitalWrite(TFT_BL, HIGH);
-    tft.init(135, 240);
-    tft.setRotation(3); 
-    tft.fillScreen(ST77XX_BLACK);
-    tft.setTextColor(ST77XX_WHITE);
-    tft.setTextSize(2);
-    tft.setCursor(5, 10);
-    tft.println("Initializing..."); // This will be quickly overwritten by updateDisplay
-    Serial.println("Display Initialized.");
-    return true;
-}
+  delay(5000);
+  Serial.println("Initializing Display...");
 
-// --- Button Input Handling ---
-void handleButtonInputs() {
-    String currentBLEStatus = getBLEStatus(); // Cache status
+  TB.neopixelPin = PIN_NEOPIXEL;
+  TB.neopixelNum = 1; 
+  TB.begin();
+  TB.setColor(WHITE);
 
-    if (isButtonAPressed() && (millis() - lastButtonATime > buttonDebounceDelay)) {
-        lastButtonATime = millis();
-        Serial.println("Button A Pressed");
-        if (currentBLEStatus == "Select Device") {
-            int count = getDiscoveredDeviceCount();
-            if (count > 0) {
-                int currentIndex = getSelectedDeviceIndex();
-                setSelectedDeviceIndex((currentIndex + 1)); // setSelectedDeviceIndex handles wrap-around
-            }
-        } else if (currentBLEStatus == "No Devices Found" || currentBLEStatus == "Disconnected" || currentBLEStatus == "Connection Failed" || currentBLEStatus == "Connect Failed") {
-            // Button A to rescan
-            startBleScan();
-        }
-        // Add other actions for Button A in different states if needed
-    }
+  display.init(135, 240);           // Init ST7789 240x135
+  display.setRotation(3);
+  canvas.setFont(&FreeSans12pt7b);
+  canvas.setTextColor(ST77XX_WHITE); 
 
-    if (isButtonBPressed() && (millis() - lastButtonBTime > buttonDebounceDelay)) {
-        lastButtonBTime = millis();
-        Serial.println("Button B Pressed");
-        if (currentBLEStatus == "Select Device") {
-            if (getDiscoveredDeviceCount() > 0) { // Only connect if there are devices
-                 connectToSelectedDevice(); 
-            }
-        }
-        // Add other actions for Button B in different states if needed
-    }
-}
-
-// --- Display Update Function ---
-void updateDisplay() {
-    tft.fillScreen(ST77XX_BLACK);
-    tft.setCursor(0, 0);
+  if (!lipo.begin()) {
+    Serial.println(F("Couldnt find Adafruit MAX17048?\nMake sure a battery is plugged in!"));
+    while (1) delay(10);
+  }
     
-    String currentBLEStatus = getBLEStatus(); // Cache status for consistent display
+  Serial.print(F("Found MAX17048"));
+  Serial.print(F(" with Chip ID: 0x")); 
+  Serial.println(lipo.getChipID(), HEX);
 
-    if (currentBLEStatus == "Select Device") {
-        tft.setTextSize(2);
-        tft.setTextColor(ST77XX_CYAN);
-        tft.println("Select Device:"); // Approx 16px height
-        tft.setTextSize(1); // Smaller text for list items (approx 8px height per line)
-        tft.setTextColor(ST77XX_WHITE);
+  if (TB.scanI2CBus(0x77)) {
+    Serial.println("BME280 address");
 
-        int count = getDiscoveredDeviceCount();
-        int selectedIdx = getSelectedDeviceIndex();
-        const int itemsPerPage = 7; // Max devices to show (135px height - 16px for title) / ~15px per item ~ 7-8 items.
-                                    // Header (16px) + Footer (10px) = 26px. Remaining 109px. 109/15 = ~7 items.
+    unsigned status = bme.begin();  
+    if (!status) {
+      Serial.println("Could not find a valid BME280 sensor, check wiring, address, sensor ID!");
+      Serial.print("SensorID was: 0x"); Serial.println(bme.sensorID(),16);
+      Serial.print("        ID of 0xFF probably means a bad address, a BMP 180 or BMP 085\n");
+      Serial.print("   ID of 0x56-0x58 represents a BMP 280,\n");
+      Serial.print("        ID of 0x60 represents a BME 280.\n");
+      Serial.print("        ID of 0x61 represents a BME 680.\n");
 
-        if (count == 0) {
-            tft.setCursor(5, 30);
-            tft.println("No devices found.");
-            tft.setCursor(5, 45);
-            tft.println("Press A to rescan.");
-        } else {
-            for (int i = 0; i < count; ++i) { 
-                 if (i >= itemsPerPage) break; 
-                NimBLEAdvertisedDevice* device = getDiscoveredDevice(i);
-                if (device) {
-                    tft.setCursor(5, 20 + (i * 12) ); // Y spacing for text size 1
-                    if (i == selectedIdx) {
-                        tft.setTextColor(ST77XX_YELLOW); 
-                        tft.print("> ");
-                    } else {
-                        tft.setTextColor(ST77XX_WHITE);
-                        tft.print("  ");
-                    }
-                    String name = device->getName().c_str();
-                    if (name.length() == 0) name = device->getAddress().toString().c_str();
-                    tft.println(name.substring(0, 18)); 
-                }
-            }
-             tft.setCursor(5, tft.height() - 12); // Position for footer instructions
-             tft.setTextSize(1);
-             tft.setTextColor(ST77XX_CYAN);
-             tft.print("A:Next, B:Connect");
-        }
-    } else if (currentBLEStatus == "Connected") {
-        tft.setTextSize(2);
-        tft.setTextColor(ST77XX_GREEN);
-        tft.print("Connected: "); 
-        // Optionally display connected device name here if accessible
-        // NimBLEAdvertisedDevice* connectedDev = getConnectedDevice(); // Would need such a function
-        // if(connectedDev) tft.println(connectedDev->getName().substring(0,10)); else tft.println();
-        tft.println(); // Newline after "Connected: "
-
-        uint16_t power = getPower();
-        tft.setTextColor(ST77XX_YELLOW);
-        tft.print("Pwr: "); tft.print(power); tft.println(" W");
-
-        uint8_t cadence = getCadence();
-        tft.setTextColor(ST77XX_GREEN); // Re-set color if changed
-        tft.print("Cad: "); tft.print(cadence); tft.println(" RPM");
-
-    } else { // Other statuses: Initializing, Scanning, Connecting, Disconnected, No Devices Found, etc.
-        tft.setTextSize(2);
-        tft.setTextColor(ST77XX_CYAN);
-        tft.println(currentBLEStatus); // Display the status string directly
-
-        if (currentBLEStatus == "No Devices Found" || currentBLEStatus == "Disconnected" || currentBLEStatus == "Connection Failed" || currentBLEStatus == "Connect Failed") {
-            tft.setTextSize(1);
-            tft.setTextColor(ST77XX_WHITE);
-            tft.setCursor(5, 30);
-            tft.println("Press A to rescan.");
-        }
     }
+    Serial.println("BME280 found OK");
+    bmefound = true;
+
+    return true; // BME280 found and initialized
+  }
+
+  pinMode(0, INPUT_PULLUP);
+  pinMode(1, INPUT_PULLDOWN);
+  pinMode(2, INPUT_PULLDOWN);
+
+  // Perform I2C scan once at the end of initialization
+  Serial.print("I2C scan: ");
+  for (int i=0; i< 128; i++) {
+    if (TB.scanI2CBus(i, 0)) {
+      Serial.print("0x");
+      Serial.print(i, HEX);
+      Serial.print(", ");
+      valid_i2c[i] = true;
+    } else {
+      valid_i2c[i] = false;
+    }
+  }
+  Serial.println(); // Add a newline after scan
+  
+  return true;
 }
+
