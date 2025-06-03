@@ -45,7 +45,12 @@ void displayUpdateTask(void *pvParameters) {
   uint8_t cadence = 0;
   BleConnectionState currentBleState = BLE_IDLE;
   char deviceName[50] = {0};
+  float local_left_balance = 50.0f;
+  bool local_balance_available = false;
+
   char statusString[100] = {0}; // Buffer for BLE status text
+  char lrBalanceString[50] = {0}; // Buffer for L/R balance text
+
 
   for (;;) { // Infinite loop for the task
     // Read shared data
@@ -55,16 +60,18 @@ void displayUpdateTask(void *pvParameters) {
         currentBleState = g_powerCadenceData.bleState;
         strncpy(deviceName, g_powerCadenceData.connectedDeviceName, sizeof(deviceName) - 1);
         deviceName[sizeof(deviceName) - 1] = '\0'; // Ensure null termination
+
+        local_left_balance = g_powerCadenceData.left_pedal_balance_percent;
+        local_balance_available = g_powerCadenceData.pedal_balance_available;
         // g_powerCadenceData.newData = false; // Reset flag if used this way
         xSemaphoreGive(g_dataMutex);
     } else {
         Serial.println("Display task: Failed to get mutex");
-        // Keep displaying stale data or show error message on display
-        strcpy(statusString, "Status: Mutex Error"); // Example error feedback
+        strcpy(statusString, "Status: Mutex Error");
+        strcpy(lrBalanceString, "L/R: Mutex Error");
     }
 
-    // Prepare BLE status string
-    // This section is outside the mutex lock as it uses local copies of data
+    // Prepare BLE status string (outside mutex, uses local copies)
     switch (currentBleState) {
         case BLE_IDLE:
             strcpy(statusString, "BLE: Idle");
@@ -87,42 +94,51 @@ void displayUpdateTask(void *pvParameters) {
             break;
     }
 
+    // Prepare L/R Balance display string (outside mutex, uses local copies)
+    if (local_balance_available) {
+        float right_pedal_balance_percent = 100.0f - local_left_balance;
+        if (right_pedal_balance_percent < 0.0f) right_pedal_balance_percent = 0.0f;
+        snprintf(lrBalanceString, sizeof(lrBalanceString), "L/R: %.0f%% / %.0f%%", local_left_balance, right_pedal_balance_percent);
+    } else {
+        snprintf(lrBalanceString, sizeof(lrBalanceString), "L/R: --%% / --%%");
+    }
+
     canvas.fillScreen(ST77XX_BLACK); // Clear canvas
 
-    // Font is set in initializeDisplay() to FreeSans12pt7b
+    // Font is FreeSans12pt7b from initializeDisplay()
 
-    // 1. Battery Info
+    // 1. Power
     canvas.setCursor(10, 20);
-    canvas.setTextColor(ST77XX_YELLOW);
-    canvas.print("Batt: ");
-    canvas.setTextColor(ST77XX_WHITE);
-    canvas.print(lipo.cellVoltage(), 1);
-    canvas.print("V ");
-    canvas.print(lipo.cellPercent(), 0);
-    canvas.println("%");
-
-    // 2. Power
-    canvas.setCursor(10, 50);
     canvas.setTextColor(ST77XX_GREEN);
     canvas.print("Power: ");
     canvas.setTextColor(ST77XX_WHITE);
     canvas.print(power);
     canvas.println(" W");
 
-    // 3. Cadence
-    canvas.setCursor(10, 80);
+    // 2. Cadence
+    canvas.setCursor(10, 45);
     canvas.setTextColor(ST77XX_GREEN);
     canvas.print("Cadence: ");
     canvas.setTextColor(ST77XX_WHITE);
     canvas.print(cadence);
     canvas.println(" RPM");
 
+    // 3. L/R Balance
+    canvas.setCursor(10, 70);
+    canvas.setTextColor(ST77XX_WHITE); // White for the value string itself
+    canvas.println(lrBalanceString);
+
     // 4. BLE Status
-    canvas.setCursor(10, 110);
+    canvas.setCursor(10, 95);
     canvas.setTextColor(ST77XX_CYAN);
-    canvas.print(statusString);
-    // Note: If statusString is too long, it will be clipped by the canvas.
-    // A smaller font or scrolling text might be needed for very long device names.
+    canvas.println(statusString);
+
+    // 5. Battery Info
+    canvas.setCursor(10, 120);
+    canvas.setTextColor(ST77XX_YELLOW);
+    char battString[30];
+    snprintf(battString, sizeof(battString), "Batt: %.1fV %.0f%%", lipo.cellVoltage(), lipo.cellPercent());
+    canvas.println(battString);
 
     display.drawRGBBitmap(0, 0, canvas.getBuffer(), 240, 135);
 

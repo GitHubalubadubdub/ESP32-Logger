@@ -21,6 +21,10 @@ struct PowerCadenceData {
     // New members for BLE status
     BleConnectionState bleState = BLE_IDLE;
     char connectedDeviceName[50] = {0}; // Max length for device name
+
+    // New fields for L/R Power Balance
+    float left_pedal_balance_percent = 50.0f; // Default to 50%
+    bool pedal_balance_available = false;
 };
 
 // Data Record Structure (Binary Format)
