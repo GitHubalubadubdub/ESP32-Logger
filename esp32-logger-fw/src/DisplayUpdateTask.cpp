@@ -1,5 +1,5 @@
 #include "DisplayUpdateTask.h"
-#include "config.h"
+#include "config.h" // Includes types.h (for BleConnectionState)
 
 #include "Adafruit_MAX1704X.h"
 #include <Adafruit_NeoPixel.h>
@@ -7,6 +7,8 @@
 #include <Adafruit_BME280.h>
 #include <Adafruit_ST7789.h> 
 #include <Fonts/FreeSans12pt7b.h>
+#include <cstdio>  // For snprintf
+#include <cstring> // For strcpy, strncpy
 
 
 Adafruit_BME280 bme; // I2C
@@ -41,49 +43,56 @@ void displayUpdateTask(void *pvParameters) {
 
   uint16_t power = 0;
   uint8_t cadence = 0;
-  // bool newDataToDisplay = false; // Optional: Only update screen if newData
+  BleConnectionState currentBleState = BLE_IDLE;
+  char deviceName[50] = {0};
+  char statusString[100] = {0}; // Buffer for BLE status text
 
   for (;;) { // Infinite loop for the task
     // Read shared data
     if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         power = g_powerCadenceData.power;
         cadence = g_powerCadenceData.cadence;
-        // Optional: Reset newData flag if you are using it
-        // if (g_powerCadenceData.newData) {
-        //    newDataToDisplay = true;
-        //    g_powerCadenceData.newData = false;
-        // }
+        currentBleState = g_powerCadenceData.bleState;
+        strncpy(deviceName, g_powerCadenceData.connectedDeviceName, sizeof(deviceName) - 1);
+        deviceName[sizeof(deviceName) - 1] = '\0'; // Ensure null termination
+        // g_powerCadenceData.newData = false; // Reset flag if used this way
         xSemaphoreGive(g_dataMutex);
     } else {
-        Serial.println("Display task failed to get mutex. Displaying potentially stale data.");
-        // Optionally, indicate stale data on screen
+        Serial.println("Display task: Failed to get mutex");
+        // Keep displaying stale data or show error message on display
+        strcpy(statusString, "Status: Mutex Error"); // Example error feedback
     }
 
-    // Update display (consider only if newDataToDisplay is true for efficiency)
+    // Prepare BLE status string
+    // This section is outside the mutex lock as it uses local copies of data
+    switch (currentBleState) {
+        case BLE_IDLE:
+            strcpy(statusString, "BLE: Idle");
+            break;
+        case BLE_SCANNING:
+            strcpy(statusString, "BLE: Scanning...");
+            break;
+        case BLE_CONNECTING:
+            // If deviceName is available from advertisement, it could be shown here
+            snprintf(statusString, sizeof(statusString), "BLE: Connecting %s", deviceName[0] == '\0' ? "" : deviceName);
+            break;
+        case BLE_CONNECTED:
+            snprintf(statusString, sizeof(statusString), "BLE: %s", deviceName);
+            break;
+        case BLE_DISCONNECTED:
+            strcpy(statusString, "BLE: Disconnected");
+            break;
+        default:
+            strcpy(statusString, "BLE: Unknown State");
+            break;
+    }
+
     canvas.fillScreen(ST77XX_BLACK); // Clear canvas
 
-    // Font is set in initializeDisplay()
-    // canvas.setFont(&FreeSans12pt7b);
+    // Font is set in initializeDisplay() to FreeSans12pt7b
 
-    // Display Power
-    canvas.setCursor(10, 35); // Adjusted for 12pt font height
-    canvas.setTextColor(ST77XX_GREEN);
-    canvas.print("Power: ");
-    canvas.setTextColor(ST77XX_WHITE);
-    canvas.print(power);
-    canvas.println(" W");
-
-    // Display Cadence
-    canvas.setCursor(10, 70); // Position below power
-    canvas.setTextColor(ST77XX_GREEN);
-    canvas.print("Cadence: ");
-    canvas.setTextColor(ST77XX_WHITE);
-    canvas.print(cadence);
-    canvas.println(" RPM");
-
-    // Display other sensor data if needed (e.g. battery, GPS status)
-    // Example: Battery
-    canvas.setCursor(10, 105);
+    // 1. Battery Info
+    canvas.setCursor(10, 20);
     canvas.setTextColor(ST77XX_YELLOW);
     canvas.print("Batt: ");
     canvas.setTextColor(ST77XX_WHITE);
@@ -92,11 +101,31 @@ void displayUpdateTask(void *pvParameters) {
     canvas.print(lipo.cellPercent(), 0);
     canvas.println("%");
 
+    // 2. Power
+    canvas.setCursor(10, 50);
+    canvas.setTextColor(ST77XX_GREEN);
+    canvas.print("Power: ");
+    canvas.setTextColor(ST77XX_WHITE);
+    canvas.print(power);
+    canvas.println(" W");
 
-    // Update the physical display
+    // 3. Cadence
+    canvas.setCursor(10, 80);
+    canvas.setTextColor(ST77XX_GREEN);
+    canvas.print("Cadence: ");
+    canvas.setTextColor(ST77XX_WHITE);
+    canvas.print(cadence);
+    canvas.println(" RPM");
+
+    // 4. BLE Status
+    canvas.setCursor(10, 110);
+    canvas.setTextColor(ST77XX_CYAN);
+    canvas.print(statusString);
+    // Note: If statusString is too long, it will be clipped by the canvas.
+    // A smaller font or scrolling text might be needed for very long device names.
+
     display.drawRGBBitmap(0, 0, canvas.getBuffer(), 240, 135);
 
-    // TB.setColor(TB.Wheel(j++)); // Removed Neopixel cycling for now
     vTaskDelay(pdMS_TO_TICKS(250)); // Update rate (e.g., 4 Hz)
   }
 }

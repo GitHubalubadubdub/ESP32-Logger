@@ -1,7 +1,9 @@
 #include "BleManagerTask.h"
 #include <NimBLEDevice.h>
-#include "config.h" // For g_powerCadenceData, g_dataMutex
+#include "config.h" // For g_powerCadenceData, g_dataMutex, BleConnectionState, types.h
 #include <Arduino.h> // For Serial prints and other Arduino functions
+#include <string>    // For std::string
+#include <cstring>   // For memset, strncpy
 
 // Static global variables for this file
 static NimBLEScan* pBLEScan;
@@ -121,18 +123,38 @@ class ClientCallbacks : public NimBLEClientCallbacks {
         Serial.print("Connected to BLE server: ");
         Serial.println(pclient_in->getPeerAddress().toString().c_str());
         connected = true;
-        // pclient_in->updatePeerMTU(517); // Optional: Request larger MTU. Do this after connection.
-                                        // Consider handling the callback for MTU change.
+        // pclient_in->updatePeerMTU(517); // Optional: Request larger MTU.
+
+        if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            g_powerCadenceData.bleState = BLE_CONNECTED;
+            std::string name = pclient_in->getPeerAddress().toString();
+            if (myDevice && myDevice->haveName()) {
+                name = myDevice->getName();
+                if (name.empty()) {
+                     name = pclient_in->getPeerAddress().toString();
+                }
+            }
+            strncpy(g_powerCadenceData.connectedDeviceName, name.c_str(), sizeof(g_powerCadenceData.connectedDeviceName) - 1);
+            g_powerCadenceData.connectedDeviceName[sizeof(g_powerCadenceData.connectedDeviceName) - 1] = '\0';
+            g_powerCadenceData.newData = true;
+            xSemaphoreGive(g_dataMutex);
+            Serial.printf("Device Name/Addr for display: %s\n", name.c_str());
+        }
     }
 
     void onDisconnect(NimBLEClient* pclient_in) {
         Serial.print("Disconnected from BLE server: ");
         Serial.println(pclient_in->getPeerAddress().toString().c_str());
         connected = false;
-        pClient = nullptr; // Crucial: Reset pClient to allow connectToServer to create a new one
-        doConnect = false; // Allow main loop to rescan and connect
-        // No need to delete pClient here, it's handled in connectToServer failure or main loop
-        // NimBLEDevice::getScan()->start(5, false); // Optionally restart scan immediately
+        pClient = nullptr;
+        doConnect = false;
+
+        if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            g_powerCadenceData.bleState = BLE_DISCONNECTED;
+            g_powerCadenceData.newData = true; // Trigger display update
+            // Keep device name for info, or clear: memset(g_powerCadenceData.connectedDeviceName, 0, sizeof(g_powerCadenceData.connectedDeviceName));
+            xSemaphoreGive(g_dataMutex);
+        }
     }
 };
 
@@ -157,14 +179,23 @@ class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
             NimBLEDevice::getScan()->stop();
             Serial.println("Scan stopped.");
             // myDevice = new NimBLEAdvertisedDevice(*advertisedDevice); // Make a copy for long term storage
-            myDevice = advertisedDevice; // Store a pointer to the found device.
-                                         // The advertisedDevice object is owned by the NimBLEScan.
-                                         // It might be deleted if not careful.
-                                         // For robust solution, copy necessary data or the object itself.
-                                         // However, NimBLE examples often pass this pointer directly.
-                                         // Let's try with direct pointer first. If issues, create a copy.
+            myDevice = advertisedDevice;
             doConnect = true;
             Serial.println("Device stored, doConnect set to true.");
+
+            if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                g_powerCadenceData.bleState = BLE_CONNECTING;
+                // Optionally, attempt to set name here if it's usually available and useful
+                // For example:
+                // if (myDevice->haveName()) {
+                //    strncpy(g_powerCadenceData.connectedDeviceName, myDevice->getName().c_str(), sizeof(g_powerCadenceData.connectedDeviceName) - 1);
+                //    g_powerCadenceData.connectedDeviceName[sizeof(g_powerCadenceData.connectedDeviceName) - 1] = '\0';
+                // } else {
+                //    memset(g_powerCadenceData.connectedDeviceName, 0, sizeof(g_powerCadenceData.connectedDeviceName)); // Clear if no name
+                // }
+                g_powerCadenceData.newData = true;
+                xSemaphoreGive(g_dataMutex);
+            }
         }
     }
 };
@@ -253,8 +284,14 @@ bool connectToServer() {
 
 // BLE Manager Task
 void bleManagerTask(void *pvParameters) {
-    Serial.println("BLE Manager Task started.");
-    vTaskDelay(pdMS_TO_TICKS(1000)); // Delay for system to stabilize if needed
+    if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        g_powerCadenceData.bleState = BLE_IDLE;
+        memset(g_powerCadenceData.connectedDeviceName, 0, sizeof(g_powerCadenceData.connectedDeviceName));
+        g_powerCadenceData.newData = true;
+        xSemaphoreGive(g_dataMutex);
+    }
+    Serial.println("BLE Manager Task started, initial state BLE_IDLE.");
+    //vTaskDelay(pdMS_TO_TICKS(1000)); // Delay for system to stabilize if needed (already have one before this)
 
     NimBLEDevice::init("");
     Serial.println("NimBLE initialized.");
@@ -285,33 +322,56 @@ void bleManagerTask(void *pvParameters) {
                 // The 'connected' flag is managed by ClientCallbacks
             } else {
                 Serial.println("Connection attempt failed. Resetting flags.");
-                // Ensure pClient is cleaned up if connectToServer failed partway
-                if (pClient != nullptr && !pClient->isConnected()) {
-                     NimBLEDevice::deleteClient(pClient);
-                     pClient = nullptr;
+                if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                    g_powerCadenceData.bleState = BLE_DISCONNECTED;
+                    g_powerCadenceData.newData = true;
+                    xSemaphoreGive(g_dataMutex);
                 }
-                myDevice = nullptr; // Clear device so scan can find a new one or re-find this one
-                doConnect = false;  // Reset connect flag
-                connected = false;  // Ensure connected is false
+                // Ensure pClient is cleaned up if connectToServer failed partway
+                if (pClient != nullptr && !pClient->isConnected()) { // Check isConnected before deleting
+                     NimBLEDevice::deleteClient(pClient); // This should trigger onDisconnect if connected
+                }
+                pClient = nullptr; // Ensure pClient is null after deletion or if it was not connected
+                myDevice = nullptr;
+                doConnect = false;
+                connected = false;
             }
-        } else if (!connected) { // If not trying to connect and not connected, then scan
+        } else if (!connected) {
             if (pBLEScan->isScanning() == false) {
+                if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                    g_powerCadenceData.bleState = BLE_SCANNING;
+                    memset(g_powerCadenceData.connectedDeviceName, 0, sizeof(g_powerCadenceData.connectedDeviceName));
+                    g_powerCadenceData.newData = true;
+                    xSemaphoreGive(g_dataMutex);
+                }
                 Serial.println("Not connected and not scanning. Starting BLE scan...");
-                // Start scan for a defined duration (e.g., 5 seconds).
-                // The 'false' means scanEndedCallback is not used here, scan stops after duration.
-                // If 0, it scans until explicitly stopped.
-                if (pBLEScan->start(5, nullptr) == 0) { // 0 means success
+                // pBLEScan->clearResults(); // Clear old scan results before starting
+                if (pBLEScan->start(5, nullptr, false) == 0) { // Scan for 5s, no scan_eof_cb, blocking call
                      Serial.println("Scan started successfully.");
                 } else {
-                     Serial.println("Failed to start scan.");
+                     Serial.println("Failed to start scan (already running or other error).");
+                     // If scan fails to start, update state back to IDLE or DISCONNECTED
+                     if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                        g_powerCadenceData.bleState = BLE_IDLE; // Or DISCONNECTED
+                        g_powerCadenceData.newData = true;
+                        xSemaphoreGive(g_dataMutex);
+                     }
                 }
             } else {
-                Serial.println("Scan in progress...");
+                // Serial.println("Scan in progress..."); // This can be very noisy
             }
         } else { // Is connected
-             Serial.println("BLE Connected. Waiting for notifications or disconnect.");
-             // Task doesn't need to do much here if relying on notifications and callbacks
+             // Serial.println("BLE Connected. Waiting for notifications or disconnect."); // Also noisy
+             if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                if (g_powerCadenceData.bleState != BLE_CONNECTED) { // Update if state was changed elsewhere
+                    g_powerCadenceData.bleState = BLE_CONNECTED;
+                    g_powerCadenceData.newData = true;
+                }
+                // Refresh device name if it can change or was not set at connection
+                // This is already handled in onConnect, so might be redundant unless name can change post-connection
+                xSemaphoreGive(g_dataMutex);
+             }
         }
-        vTaskDelay(pdMS_TO_TICKS(2000)); // Check status periodically
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Reduced delay for faster state updates if needed
     }
 }
