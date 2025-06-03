@@ -2,6 +2,9 @@
 #define CONFIG_H
 
 #include <Arduino.h>
+#include "types.h" // For PowerCadenceData
+#include <FreeRTOS.h>
+#include <semphr.h> // For SemaphoreHandle_t
 
 // Pin Definitions
 // GPS (UART1)
@@ -35,6 +38,10 @@
 
 // PSRAM Buffer Configuration
 #define PSRAM_BUFFER_SIZE_RECORDS 2000 // Number of LogRecordV1 entries (e.g., 10 seconds at 200Hz)
+
+// Shared data structure for power and cadence
+extern PowerCadenceData g_powerCadenceData;
+extern SemaphoreHandle_t g_dataMutex;
 
 // System States (Example)
 enum SystemState {

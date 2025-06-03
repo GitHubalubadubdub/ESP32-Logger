@@ -4,6 +4,12 @@
 #include <stdint.h> // For fixed-width integer types
 #include <math.h>   // For NAN
 
+struct PowerCadenceData {
+    uint16_t power = 0;
+    uint8_t cadence = 0;
+    bool newData = false; // Optional: flag for display task
+};
+
 // Data Record Structure (Binary Format)
 // Approximately 81 bytes, check actual size with sizeof(LogRecordV1)
 typedef struct __attribute__((__packed__)) {
