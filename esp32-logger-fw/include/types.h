@@ -25,6 +25,13 @@ struct PowerCadenceData {
     // New fields for L/R Power Balance
     float left_pedal_balance_percent = 50.0f; // Default to 50%
     bool pedal_balance_available = false;
+
+    // New fields for TDS/BDS Angles
+    uint16_t top_dead_spot_angle = 0;     // Value in degrees
+    bool top_dead_spot_available = false;
+    uint16_t bottom_dead_spot_angle = 0;  // Value in degrees
+    bool bottom_dead_spot_available = false;
+    bool dead_spot_angles_supported = false; // Is the feature supported by connected PM
 };
 
 // Data Record Structure (Binary Format)
