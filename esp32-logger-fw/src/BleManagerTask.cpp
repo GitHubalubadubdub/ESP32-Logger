@@ -17,12 +17,7 @@ static boolean connected = false;
 void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify) {
     static uint16_t prevCrankRevolutions = 0;
     static uint16_t prevCrankEventTime = 0; // In 1/1024s units
-    static bool firstCrankDataPacketProcessed = false; // Renamed for clarity
-
-    // Serial.print("Notify callback for char ");
-    // Serial.print(pBLERemoteCharacteristic->getUUID().toString().c_str());
-    // Serial.print(" data length ");
-    // Serial.println(length);
+    static bool firstCrankDataPacketProcessed = false;
 
     if (length < 2) { // Minimum length for Flags
         Serial.println("Data length too short for flags.");
@@ -32,34 +27,47 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
     uint16_t flags = (pData[1] << 8) | pData[0];
     uint16_t finalPower = 0;
     uint8_t finalCadence = 0;
+    float finalLeftPedalBalance = 50.0f; // Default value
+    bool finalBalanceAvailable = false;
 
     // --- Parse Power ---
-    // Instantaneous Power is at offset 2 (bytes 2, 3), requires length >= 4
-    if (length >= 4) {
+    if (length >= 4) { // Instantaneous Power is at offset 2 (bytes 2, 3)
         int16_t rawPower = (int16_t)((pData[3] << 8) | pData[2]);
-        if (rawPower < 0) {
-            finalPower = 0;
-        } else {
-            finalPower = (uint16_t)rawPower;
-        }
+        finalPower = (rawPower < 0) ? 0 : (uint16_t)rawPower;
     } else {
         Serial.println("Data length too short for power measurement.");
-        // finalPower remains 0
+    }
+
+    // --- Parse Pedal Power Balance ---
+    bool pedalBalanceFlagPresent = (flags & 0x01); // Check bit 0
+    uint8_t currentOffset = 4; // Start after Flags (2) and Power (2)
+
+    if (pedalBalanceFlagPresent) {
+        if (length >= currentOffset + 1) { // Pedal Balance is 1 byte
+            uint8_t balanceValue = pData[currentOffset];
+            // Standard says: "If the LSB of the Flags field is 1, this field [Pedal Power Balance] indicates the percentage of power measured by the Left pedal."
+            // "Resolution is 1/2 percent". So, value of 100 means 50%.
+            finalLeftPedalBalance = (float)balanceValue / 2.0f;
+            finalBalanceAvailable = true;
+            currentOffset += 1; // Increment offset for next field
+        } else {
+            Serial.println("Pedal Balance flag set, but data length insufficient.");
+            finalBalanceAvailable = false; // Keep default balance
+        }
+    } else {
+        // finalBalanceAvailable remains false, finalLeftPedalBalance remains 50.0f
     }
 
     // --- Parse Cadence ---
     bool crankDataFlagPresent = (flags & 0x02); // Check bit 1 for Crank Revolution Data
+    // Cadence data (Accumulated Crank Revolutions and Last Crank Event Time) starts after Pedal Power Balance if present.
+    // So, use 'currentOffset' which was advanced if pedal balance was parsed.
 
     if (crankDataFlagPresent) {
-        uint8_t baseOffset = 4; // Starting offset after Flags (2 bytes) and Power (2 bytes)
-        if (flags & 0x01) { // Check bit 0 for Pedal Power Balance Present
-            baseOffset += 1; // Increment offset if Pedal Power Balance field is present
-        }
-
-        // Check if there's enough data for Accumulated Crank Revolutions (2 bytes) and Last Crank Event Time (2 bytes)
-        if (length >= baseOffset + 4) {
-            uint16_t currentCrankRevolutions = (pData[baseOffset+1] << 8) | pData[baseOffset+0];
-            uint16_t currentCrankEventTime = (pData[baseOffset+3] << 8) | pData[baseOffset+2]; // In 1/1024s
+        // Each field is 2 bytes, so we need 4 bytes from currentOffset
+        if (length >= currentOffset + 4) {
+            uint16_t currentCrankRevolutions = (pData[currentOffset+1] << 8) | pData[currentOffset+0];
+            uint16_t currentCrankEventTime = (pData[currentOffset+3] << 8) | pData[currentOffset+2];
 
             if (firstCrankDataPacketProcessed) {
                 uint16_t deltaRevolutions;
@@ -79,14 +87,12 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
                 if (deltaRevolutions > 0 && deltaEventTime > 0) {
                     double deltaTimeSeconds = (double)deltaEventTime / 1024.0;
                     finalCadence = (uint8_t)(((double)deltaRevolutions / deltaTimeSeconds) * 60.0);
-                } else if (deltaEventTime > (1024 * 2)) { // More than 2 seconds with no new crank revolution
-                    finalCadence = 0; // Cadence is 0 if no pedaling for a while
+                } else if (deltaEventTime > (1024 * 2)) {
+                    finalCadence = 0;
                 } else {
-                    // No new revolutions in a short interval, or deltaEventTime is 0.
                     finalCadence = 0;
                 }
             } else {
-                // This is the first packet with crank data. Cadence is 0 until the next packet.
                 firstCrankDataPacketProcessed = true;
                 finalCadence = 0;
             }
@@ -96,12 +102,12 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
 
         } else {
             Serial.println("Crank data flag set, but data length insufficient for crank fields.");
-            firstCrankDataPacketProcessed = false; // Reset if data becomes too short
+            firstCrankDataPacketProcessed = false;
             finalCadence = 0;
         }
     } else {
         Serial.println("Crank Revolution Data not present in flags.");
-        firstCrankDataPacketProcessed = false; // Reset if flag is not set
+        firstCrankDataPacketProcessed = false;
         finalCadence = 0;
     }
 
@@ -109,9 +115,15 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
     if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
         g_powerCadenceData.power = finalPower;
         g_powerCadenceData.cadence = finalCadence;
-        g_powerCadenceData.newData = true;
+        g_powerCadenceData.left_pedal_balance_percent = finalLeftPedalBalance;
+        g_powerCadenceData.pedal_balance_available = finalBalanceAvailable;
+        // BLE status fields are updated elsewhere and should not be overwritten here
+        // unless explicitly intended (e.g. g_powerCadenceData.newData = true;)
+        g_powerCadenceData.newData = true; // Signal that new sensor data is available
+
         xSemaphoreGive(g_dataMutex);
-        Serial.printf("Processed Data -> Power: %u W, Cadence: %u RPM\n", finalPower, finalCadence);
+        Serial.printf("Processed Data -> Power: %u W, Cadence: %u RPM, L-Balance: %.1f%% (Available: %s)\n",
+                      finalPower, finalCadence, finalLeftPedalBalance, finalBalanceAvailable ? "Yes" : "No");
     } else {
         Serial.println("NotifyCallback: Failed to get mutex for data update.");
     }
