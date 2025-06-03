@@ -85,6 +85,10 @@ void displayUpdateTask(void *pvParameters) {
 bool initializeDisplay() {
     pinMode(TFT_BACKLITE, OUTPUT);
     digitalWrite(TFT_BACKLITE, HIGH);
+    // SCK and MOSI should be defined in the board variant (pins_arduino.h)
+    // For Adafruit ESP32-S3 TFT Feather: SCK is 36, MOSI is 35.
+    SPI.begin(SCK, -1, MOSI, -1); // Use SCK, MOSI from variant. MISO (-1), CS (-1 as tft object handles it).
+    Serial.println("SPI.begin(SCK, -1, MOSI, -1) called.");
     tft.init(135, 240); // Initialize ST7789 with 135x240 for landscape after rotation
     tft.setRotation(3); 
     // Remove direct tft.fillScreen, tft.setTextColor, tft.setTextSize, tft.setCursor, tft.println
