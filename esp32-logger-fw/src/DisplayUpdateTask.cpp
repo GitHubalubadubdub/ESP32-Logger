@@ -41,37 +41,43 @@ void displayUpdateTask(void *pvParameters) {
     if (!initializeDisplay()) {
         Serial.println("Display Initialization Failed!");
         vTaskDelete(NULL);
+        vTaskDelete(NULL);
         return;
     }
 
-    tft.fillScreen(ST77XX_BLUE); // Fill screen with BLUE
-    Serial.println("Attempted to fill screen BLUE.");
-    vTaskDelay(pdMS_TO_TICKS(1000)); 
+    // Removed initial diagnostic sequence
+    // tft.fillScreen(ST77XX_BLUE); 
+    // Serial.println("Attempted to fill screen BLUE.");
+    // vTaskDelay(pdMS_TO_TICKS(1000)); 
+    // tft.invertDisplay(true);
+    // Serial.println("Attempted to invert display.");
+    // vTaskDelay(pdMS_TO_TICKS(1000));
+    // tft.fillScreen(ST77XX_YELLOW); 
+    // Serial.println("Attempted to fill screen YELLOW (after inversion).");
+    // vTaskDelay(pdMS_TO_TICKS(1000));
+    // tft.invertDisplay(false); 
+    // Serial.println("Attempted to revert display inversion.");
+    // vTaskDelay(pdMS_TO_TICKS(1000));
 
-    tft.invertDisplay(true);
-    Serial.println("Attempted to invert display.");
-    vTaskDelay(pdMS_TO_TICKS(1000));
-
-    tft.fillScreen(ST77XX_YELLOW); 
-    Serial.println("Attempted to fill screen YELLOW (after inversion).");
-    vTaskDelay(pdMS_TO_TICKS(1000));
-
-    tft.invertDisplay(false); // Revert for subsequent tests
-    Serial.println("Attempted to revert display inversion.");
-    vTaskDelay(pdMS_TO_TICKS(1000));
-
-    // static int counter = 0; // Simple counter for demonstration - REMOVED for new loop
     for (;;) {
-        static bool toggle = false;
-        if (toggle) {
-            tft.fillScreen(ST77XX_RED);
-            Serial.println("Attempted to fill screen RED.");
-        } else {
-            tft.fillScreen(ST77XX_GREEN);
-            Serial.println("Attempted to fill screen GREEN.");
+        static int x_coord = 0;
+        digitalWrite(TFT_BACKLITE, HIGH); // Continuously assert backlight
+
+        // Draw a red square
+        tft.fillRect(x_coord, 0, 10, 10, ST77XX_RED); 
+        Serial.println("Drew red rectangle.");
+        vTaskDelay(pdMS_TO_TICKS(500));
+        
+        // Erase the square by drawing a black one over it
+        tft.fillRect(x_coord, 0, 10, 10, ST77XX_BLACK); 
+        Serial.println("Drew black rectangle (erase).");
+        // No delay here, let the next loop iteration's delay handle overall timing
+
+        x_coord = (x_coord + 10);
+        if (x_coord >= tft.width()) { // Use tft.width() to get current screen width
+            x_coord = 0;
         }
-        toggle = !toggle;
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(500)); // Overall loop delay
     }
 }
 
