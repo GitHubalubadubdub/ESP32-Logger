@@ -1,5 +1,6 @@
 #include "DisplayUpdateTask.h"
 #include "config.h" // Includes types.h (for BleConnectionState)
+#include "gps_data.h" // For GpsData struct and g_gpsDataMutex
 
 #include "Adafruit_MAX1704X.h"
 #include <Adafruit_NeoPixel.h>
@@ -21,6 +22,14 @@ Adafruit_ST7789 display = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
 GFXcanvas16 canvas(240, 135);
 
 static bool valid_i2c[128]; // File-scope static for access by both functions
+
+// Display mode definitions
+enum DisplayMode { DISPLAY_POWER, DISPLAY_GPS };
+static DisplayMode currentDisplayMode = DISPLAY_POWER;
+const int MODE_SWITCH_BUTTON_PIN = BUTTON_B_PIN; // Use BUTTON_B_PIN from config.h
+static unsigned long lastButtonPressTime = 0;
+const unsigned long debounceDelay = 250; // milliseconds for button debounce
+
 
 bool initializeDisplay(); // Already in .h but good practice for .cpp internal structure
 
@@ -50,95 +59,156 @@ void displayUpdateTask(void *pvParameters) {
 
   char statusString[100] = {0}; // Buffer for BLE status text
   char lrBalanceString[50] = {0}; // Buffer for L/R balance text
+  char battString[30]; // Buffer for battery status
+
+  GpsData localGpsData; // Local copy of GPS data
 
 
   for (;;) { // Infinite loop for the task
-    // Read shared data
-    if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        power = g_powerCadenceData.power;
-        cadence = g_powerCadenceData.cadence;
-        currentBleState = g_powerCadenceData.bleState;
-        strncpy(deviceName, g_powerCadenceData.connectedDeviceName, sizeof(deviceName) - 1);
-        deviceName[sizeof(deviceName) - 1] = '\0'; // Ensure null termination
-
-        local_left_balance = g_powerCadenceData.left_pedal_balance_percent;
-        local_balance_available = g_powerCadenceData.pedal_balance_available;
-        // g_powerCadenceData.newData = false; // Reset flag if used this way
-        xSemaphoreGive(g_dataMutex);
-    } else {
-        Serial.println("Display task: Failed to get mutex");
-        strcpy(statusString, "Status: Mutex Error");
-        strcpy(lrBalanceString, "L/R: Mutex Error");
+    // --- Button Logic for Mode Switching ---
+    if (digitalRead(MODE_SWITCH_BUTTON_PIN) == LOW) {
+        if (millis() - lastButtonPressTime > debounceDelay) {
+            currentDisplayMode = (currentDisplayMode == DISPLAY_POWER) ? DISPLAY_GPS : DISPLAY_POWER;
+            lastButtonPressTime = millis();
+            Serial.println("Display mode switched to: " + String(currentDisplayMode == DISPLAY_POWER ? "POWER" : "GPS"));
+            canvas.fillScreen(ST77XX_BLACK); // Clear screen immediately on mode change
+        }
     }
 
-    // Prepare BLE status string (outside mutex, uses local copies)
-    switch (currentBleState) {
-        case BLE_IDLE:
-            strcpy(statusString, "BLE: Idle");
-            break;
-        case BLE_SCANNING:
-            strcpy(statusString, "BLE: Scanning...");
-            break;
-        case BLE_CONNECTING:
-            // If deviceName is available from advertisement, it could be shown here
-            snprintf(statusString, sizeof(statusString), "BLE: Connecting %s", deviceName[0] == '\0' ? "" : deviceName);
-            break;
-        case BLE_CONNECTED:
-            snprintf(statusString, sizeof(statusString), "BLE: %s", deviceName);
-            break;
-        case BLE_DISCONNECTED:
-            strcpy(statusString, "BLE: Disconnected");
-            break;
-        default:
-            strcpy(statusString, "BLE: Unknown State");
-            break;
+    canvas.fillScreen(ST77XX_BLACK); // Clear canvas for current mode's content
+    canvas.setFont(&FreeSans12pt7b);
+    canvas.setTextWrap(false);
+    // canvas.setCursor(10, 20); // Reset cursor for each mode's drawing - DO THIS INSIDE MODE BLOCK
+
+    if (currentDisplayMode == DISPLAY_POWER) {
+        canvas.setCursor(10, 20); // Set cursor for this mode
+        // --- Read shared power data ---
+        if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            power = g_powerCadenceData.power;
+            cadence = g_powerCadenceData.cadence;
+            currentBleState = g_powerCadenceData.bleState;
+            strncpy(deviceName, g_powerCadenceData.connectedDeviceName, sizeof(deviceName) - 1);
+            deviceName[sizeof(deviceName) - 1] = '\0'; // Ensure null termination
+
+            local_left_balance = g_powerCadenceData.left_pedal_balance_percent;
+            local_balance_available = g_powerCadenceData.pedal_balance_available;
+            xSemaphoreGive(g_dataMutex);
+        } else {
+            Serial.println("Display task (POWER): Failed to get g_dataMutex");
+            strcpy(statusString, "Status: Mutex Error");
+            strcpy(lrBalanceString, "L/R: Mutex Error");
+            power = 0; cadence = 0; currentBleState = BLE_IDLE; // Reset data
+        }
+
+        // Prepare BLE status string
+        switch (currentBleState) {
+            case BLE_IDLE: strcpy(statusString, "BLE: Idle"); break;
+            case BLE_SCANNING: strcpy(statusString, "BLE: Scanning..."); break;
+            case BLE_CONNECTING: snprintf(statusString, sizeof(statusString), "BLE: Connecting %s", deviceName[0] == '\0' ? "" : deviceName); break;
+            case BLE_CONNECTED: snprintf(statusString, sizeof(statusString), "BLE: %s", deviceName); break;
+            case BLE_DISCONNECTED: strcpy(statusString, "BLE: Disconnected"); break;
+            default: strcpy(statusString, "BLE: Unknown State"); break;
+        }
+
+        // Prepare L/R Balance display string
+        if (local_balance_available) {
+            float right_pedal_balance_percent = 100.0f - local_left_balance;
+            if (right_pedal_balance_percent < 0.0f) right_pedal_balance_percent = 0.0f;
+            snprintf(lrBalanceString, sizeof(lrBalanceString), "L/R: %.0f%% / %.0f%%", local_left_balance, right_pedal_balance_percent);
+        } else {
+            snprintf(lrBalanceString, sizeof(lrBalanceString), "L/R: --%% / --%%");
+        }
+
+        // --- Display Power Data ---
+        // 1. Power
+        canvas.setTextColor(ST77XX_GREEN);
+        canvas.print("Power: ");
+        canvas.setTextColor(ST77XX_WHITE);
+        canvas.print(power);
+        canvas.println(" W");
+
+        // 2. Cadence
+        canvas.setCursor(10, 45);
+        canvas.setTextColor(ST77XX_GREEN);
+        canvas.print("Cadence: ");
+        canvas.setTextColor(ST77XX_WHITE);
+        canvas.print(cadence);
+        canvas.println(" RPM");
+
+        // 3. L/R Balance
+        canvas.setCursor(10, 70);
+        canvas.setTextColor(ST77XX_WHITE);
+        canvas.println(lrBalanceString);
+
+        // 4. BLE Status
+        canvas.setCursor(10, 95);
+        canvas.setTextColor(ST77XX_CYAN);
+        canvas.println(statusString);
+
+        // Display Battery Info for Power Mode
+        canvas.setCursor(10, 120);
+        canvas.setTextColor(ST77XX_YELLOW);
+        snprintf(battString, sizeof(battString), "Batt: %.1fV %.0f%%", lipo.cellVoltage(), lipo.cellPercent());
+        canvas.println(battString);
+
+    } else if (currentDisplayMode == DISPLAY_GPS) {
+        canvas.setCursor(10, 20); // Set cursor for this mode
+        // --- Read shared GPS data ---
+        if (xSemaphoreTake(g_gpsDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            localGpsData = g_gpsData; // Copy the global struct
+            xSemaphoreGive(g_gpsDataMutex);
+        } else {
+            Serial.println("Display task (GPS): Failed to get g_gpsDataMutex");
+            localGpsData.is_valid = false; // Mark as invalid if mutex fails
+        }
+
+        // --- Display GPS Data ---
+        char gpsLineBuffer[50];
+
+        if (!localGpsData.is_valid || (millis() - localGpsData.last_update_millis > 7000)) { // GPS Acquiring
+            canvas.setTextColor(ST77XX_RED);
+            canvas.println("GPS: Acquiring fix..."); // Line 1 (Y=20)
+
+            canvas.setCursor(10, 45); // Line 2
+            canvas.setTextColor(ST77XX_ORANGE);
+            snprintf(gpsLineBuffer, sizeof(gpsLineBuffer), "Sats: %u Fix: %u", localGpsData.satellites, localGpsData.fix_quality);
+            canvas.println(gpsLineBuffer);
+
+            // Display Battery Info for GPS Acquiring Mode
+            canvas.setCursor(10, 70); // Line 3
+            canvas.setTextColor(ST77XX_YELLOW);
+            snprintf(battString, sizeof(battString), "Batt: %.1fV %.0f%%", lipo.cellVoltage(), lipo.cellPercent());
+            // Check if it fits; approx 16px font height
+            if (canvas.getCursorY() < (135 - 16)) {
+                canvas.println(battString);
+            }
+
+        } else { // GPS Valid
+            canvas.setTextColor(ST77XX_GREEN);
+            snprintf(gpsLineBuffer, sizeof(gpsLineBuffer), "Lat: %.5f", localGpsData.latitude);
+            canvas.println(gpsLineBuffer); // Line 1 (Y=20)
+
+            canvas.setCursor(10, 45); // Line 2
+            snprintf(gpsLineBuffer, sizeof(gpsLineBuffer), "Lon: %.5f", localGpsData.longitude);
+            canvas.println(gpsLineBuffer);
+
+            canvas.setCursor(10, 70); // Line 3
+            snprintf(gpsLineBuffer, sizeof(gpsLineBuffer), "Speed: %.1f m/s", localGpsData.speed_mps);
+            canvas.println(gpsLineBuffer);
+
+            canvas.setCursor(10, 95); // Line 4
+            snprintf(gpsLineBuffer, sizeof(gpsLineBuffer), "Alt: %.1f m", localGpsData.altitude_meters);
+            canvas.println(gpsLineBuffer);
+
+            canvas.setCursor(10, 120); // Line 5
+            canvas.setTextColor(ST77XX_ORANGE);
+            snprintf(gpsLineBuffer, sizeof(gpsLineBuffer), "Sats: %u Fix: %u", localGpsData.satellites, localGpsData.fix_quality);
+            canvas.println(gpsLineBuffer);
+
+            // No space for battery info in GPS valid mode with 5 lines of GPS data and current font.
+            // It would overwrite or exceed screen bounds.
+        }
     }
-
-    // Prepare L/R Balance display string (outside mutex, uses local copies)
-    if (local_balance_available) {
-        float right_pedal_balance_percent = 100.0f - local_left_balance;
-        if (right_pedal_balance_percent < 0.0f) right_pedal_balance_percent = 0.0f;
-        snprintf(lrBalanceString, sizeof(lrBalanceString), "L/R: %.0f%% / %.0f%%", local_left_balance, right_pedal_balance_percent);
-    } else {
-        snprintf(lrBalanceString, sizeof(lrBalanceString), "L/R: --%% / --%%");
-    }
-
-    canvas.fillScreen(ST77XX_BLACK); // Clear canvas
-
-    // Font is FreeSans12pt7b from initializeDisplay()
-
-    // 1. Power
-    canvas.setCursor(10, 20);
-    canvas.setTextColor(ST77XX_GREEN);
-    canvas.print("Power: ");
-    canvas.setTextColor(ST77XX_WHITE);
-    canvas.print(power);
-    canvas.println(" W");
-
-    // 2. Cadence
-    canvas.setCursor(10, 45);
-    canvas.setTextColor(ST77XX_GREEN);
-    canvas.print("Cadence: ");
-    canvas.setTextColor(ST77XX_WHITE);
-    canvas.print(cadence);
-    canvas.println(" RPM");
-
-    // 3. L/R Balance
-    canvas.setCursor(10, 70);
-    canvas.setTextColor(ST77XX_WHITE); // White for the value string itself
-    canvas.println(lrBalanceString);
-
-    // 4. BLE Status
-    canvas.setCursor(10, 95);
-    canvas.setTextColor(ST77XX_CYAN);
-    canvas.println(statusString);
-
-    // 5. Battery Info
-    canvas.setCursor(10, 120);
-    canvas.setTextColor(ST77XX_YELLOW);
-    char battString[30];
-    snprintf(battString, sizeof(battString), "Batt: %.1fV %.0f%%", lipo.cellVoltage(), lipo.cellPercent());
-    canvas.println(battString);
 
     display.drawRGBBitmap(0, 0, canvas.getBuffer(), 240, 135);
 
@@ -153,6 +223,10 @@ bool initializeDisplay() {
 
   pinMode(TFT_BACKLITE, OUTPUT);
   digitalWrite(TFT_BACKLITE, HIGH); // Turn on backlight early
+
+  // Initialize Mode Switch Button
+  pinMode(MODE_SWITCH_BUTTON_PIN, INPUT_PULLUP);
+  Serial.println("Mode switch button (GPIO" + String(MODE_SWITCH_BUTTON_PIN) + ") initialized.");
 
   TB.neopixelPin = PIN_NEOPIXEL;
   TB.neopixelNum = 1;
