@@ -13,58 +13,105 @@ static boolean connected = false;
 
 // Notification Callback
 void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify) {
-    Serial.print("Notify callback for char ");
-    Serial.print(pBLERemoteCharacteristic->getUUID().toString().c_str());
-    Serial.print(" data length ");
-    Serial.println(length);
+    static uint16_t prevCrankRevolutions = 0;
+    static uint16_t prevCrankEventTime = 0; // In 1/1024s units
+    static bool firstCrankDataPacketProcessed = false; // Renamed for clarity
 
-    if (pBLERemoteCharacteristic->getUUID().equals(NimBLEUUID(CYCLING_POWER_MEASUREMENT_UUID))) {
-        if (length >= 4) { // Minimum length for Flags (2 bytes) and Instantaneous Power (2 bytes)
-            // Instantaneous Power is a sint16, at offset 2 (0-indexed)
-            int16_t power = (int16_t)((pData[3] << 8) | pData[2]);
+    // Serial.print("Notify callback for char ");
+    // Serial.print(pBLERemoteCharacteristic->getUUID().toString().c_str());
+    // Serial.print(" data length ");
+    // Serial.println(length);
 
-            uint8_t cadence = 0; // Default cadence to 0
+    if (length < 2) { // Minimum length for Flags
+        Serial.println("Data length too short for flags.");
+        return;
+    }
 
-            // Cadence calculation from Crank Revolution Data (if available)
-            // Flags are in pData[0] and pData[1]. Bit 0 (0x01) indicates Crank Revolution Data support.
-            bool crankRevSupported = (pData[0] & 0x01);
-            if (crankRevSupported && length >= 9) { // Check length for Accumulated Crank Revs and Last Crank Event Time
-                // This is a simplified approach. True cadence calculation requires storing previous values
-                // and handling rollovers for both crank revolutions and event time.
-                // For now, we'll just extract the fields if present but not calculate full cadence.
-                // uint16_t accumulatedCrankRevolutions = (pData[6] << 8) | pData[5];
-                // uint16_t lastCrankEventTime = (pData[8] << 8) | pData[7]; // Time in 1/1024 seconds
+    uint16_t flags = (pData[1] << 8) | pData[0];
+    uint16_t finalPower = 0;
+    uint8_t finalCadence = 0;
 
-                // A very basic placeholder if cadence was directly sent (not standard for 0x2A63 with crank data)
-                // Example: if a sensor sends cadence directly in these bytes (unlikely for standard CPS)
-                // cadence = pData[5]; // This is NOT how it works with crank data, just a placeholder idea
-                Serial.println("Crank Revolution Data present, but full cadence calculation is complex and not yet implemented.");
-                // To implement cadence:
-                // 1. Store previous accumulatedCrankRevolutions and lastCrankEventTime.
-                // 2. On new notification:
-                //    deltaRevs = currentRevs - previousRevs (handle rollover)
-                //    deltaTime = currentTime - previousTime (handle rollover, time is in 1/1024s)
-                // 3. Cadence = (deltaRevs / (deltaTime / 1024.0)) * 60.0
-                // This requires careful state management.
-            }
-
-
-            if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-                if (power < 0) {
-                    g_powerCadenceData.power = 0;
-                } else {
-                    g_powerCadenceData.power = (uint16_t)power;
-                }
-                g_powerCadenceData.cadence = cadence; // Update with actual cadence once calculation is implemented
-                g_powerCadenceData.newData = true; // Flag for other tasks (e.g., display)
-                xSemaphoreGive(g_dataMutex);
-                Serial.printf("Power: %u W, Cadence: %u RPM (Cadence not fully implemented)\n", g_powerCadenceData.power, g_powerCadenceData.cadence);
-            } else {
-                Serial.println("Failed to take data mutex in notifyCallback");
-            }
+    // --- Parse Power ---
+    // Instantaneous Power is at offset 2 (bytes 2, 3), requires length >= 4
+    if (length >= 4) {
+        int16_t rawPower = (int16_t)((pData[3] << 8) | pData[2]);
+        if (rawPower < 0) {
+            finalPower = 0;
         } else {
-            Serial.println("Received data length too short for power measurement.");
+            finalPower = (uint16_t)rawPower;
         }
+    } else {
+        Serial.println("Data length too short for power measurement.");
+        // finalPower remains 0
+    }
+
+    // --- Parse Cadence ---
+    bool crankDataFlagPresent = (flags & 0x02); // Check bit 1 for Crank Revolution Data
+
+    if (crankDataFlagPresent) {
+        uint8_t baseOffset = 4; // Starting offset after Flags (2 bytes) and Power (2 bytes)
+        if (flags & 0x01) { // Check bit 0 for Pedal Power Balance Present
+            baseOffset += 1; // Increment offset if Pedal Power Balance field is present
+        }
+
+        // Check if there's enough data for Accumulated Crank Revolutions (2 bytes) and Last Crank Event Time (2 bytes)
+        if (length >= baseOffset + 4) {
+            uint16_t currentCrankRevolutions = (pData[baseOffset+1] << 8) | pData[baseOffset+0];
+            uint16_t currentCrankEventTime = (pData[baseOffset+3] << 8) | pData[baseOffset+2]; // In 1/1024s
+
+            if (firstCrankDataPacketProcessed) {
+                uint16_t deltaRevolutions;
+                if (currentCrankRevolutions < prevCrankRevolutions) { // Rollover
+                    deltaRevolutions = (65535 - prevCrankRevolutions) + currentCrankRevolutions + 1;
+                } else {
+                    deltaRevolutions = currentCrankRevolutions - prevCrankRevolutions;
+                }
+
+                uint16_t deltaEventTime; // In 1/1024s
+                if (currentCrankEventTime < prevCrankEventTime) { // Rollover
+                    deltaEventTime = (65535 - prevCrankEventTime) + currentCrankEventTime + 1;
+                } else {
+                    deltaEventTime = currentCrankEventTime - prevCrankEventTime;
+                }
+
+                if (deltaRevolutions > 0 && deltaEventTime > 0) {
+                    double deltaTimeSeconds = (double)deltaEventTime / 1024.0;
+                    finalCadence = (uint8_t)(((double)deltaRevolutions / deltaTimeSeconds) * 60.0);
+                } else if (deltaEventTime > (1024 * 2)) { // More than 2 seconds with no new crank revolution
+                    finalCadence = 0; // Cadence is 0 if no pedaling for a while
+                } else {
+                    // No new revolutions in a short interval, or deltaEventTime is 0.
+                    finalCadence = 0;
+                }
+            } else {
+                // This is the first packet with crank data. Cadence is 0 until the next packet.
+                firstCrankDataPacketProcessed = true;
+                finalCadence = 0;
+            }
+
+            prevCrankRevolutions = currentCrankRevolutions;
+            prevCrankEventTime = currentCrankEventTime;
+
+        } else {
+            Serial.println("Crank data flag set, but data length insufficient for crank fields.");
+            firstCrankDataPacketProcessed = false; // Reset if data becomes too short
+            finalCadence = 0;
+        }
+    } else {
+        Serial.println("Crank Revolution Data not present in flags.");
+        firstCrankDataPacketProcessed = false; // Reset if flag is not set
+        finalCadence = 0;
+    }
+
+    // --- Update Shared Data ---
+    if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        g_powerCadenceData.power = finalPower;
+        g_powerCadenceData.cadence = finalCadence;
+        g_powerCadenceData.newData = true;
+        xSemaphoreGive(g_dataMutex);
+        Serial.printf("Processed Data -> Power: %u W, Cadence: %u RPM\n", finalPower, finalCadence);
+    } else {
+        Serial.println("NotifyCallback: Failed to get mutex for data update.");
     }
 }
 
