@@ -7,6 +7,7 @@
 
 // Static global variables for this file
 static NimBLEScan* pBLEScan;
+static bool s_deadSpotAnglesSupported = false;
 static NimBLEClient* pClient = nullptr;
 static boolean doConnect = false;
 static NimBLEAdvertisedDevice* myDevice = nullptr; // Store the advertised device object
@@ -27,11 +28,15 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
     uint16_t flags = (pData[1] << 8) | pData[0];
     uint16_t finalPower = 0;
     uint8_t finalCadence = 0;
-    float finalLeftPedalBalance = 50.0f; // Default value
+    float finalLeftPedalBalance = 50.0f;
     bool finalBalanceAvailable = false;
+    uint16_t finalTopDeadSpotAngle = 0;
+    bool finalTopDeadSpotAvailable = false;
+    uint16_t finalBottomDeadSpotAngle = 0;
+    bool finalBottomDeadSpotAvailable = false;
 
     // --- Parse Power ---
-    if (length >= 4) { // Instantaneous Power is at offset 2 (bytes 2, 3)
+    if (length >= 4) {
         int16_t rawPower = (int16_t)((pData[3] << 8) | pData[2]);
         finalPower = (rawPower < 0) ? 0 : (uint16_t)rawPower;
     } else {
@@ -39,46 +44,39 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
     }
 
     // --- Parse Pedal Power Balance ---
-    bool pedalBalanceFlagPresent = (flags & 0x01); // Check bit 0
-    uint8_t currentOffset = 4; // Start after Flags (2) and Power (2)
+    bool pedalBalanceFlagPresent = (flags & 0x01);
+    uint8_t currentOffset = 4;
 
     if (pedalBalanceFlagPresent) {
-        if (length >= currentOffset + 1) { // Pedal Balance is 1 byte
+        if (length >= currentOffset + 1) {
             uint8_t balanceValue = pData[currentOffset];
-            // Standard says: "If the LSB of the Flags field is 1, this field [Pedal Power Balance] indicates the percentage of power measured by the Left pedal."
-            // "Resolution is 1/2 percent". So, value of 100 means 50%.
             finalLeftPedalBalance = (float)balanceValue / 2.0f;
             finalBalanceAvailable = true;
-            currentOffset += 1; // Increment offset for next field
+            currentOffset += 1;
         } else {
             Serial.println("Pedal Balance flag set, but data length insufficient.");
-            finalBalanceAvailable = false; // Keep default balance
+            finalBalanceAvailable = false;
         }
-    } else {
-        // finalBalanceAvailable remains false, finalLeftPedalBalance remains 50.0f
     }
 
     // --- Parse Cadence ---
-    bool crankDataFlagPresent = (flags & 0x02); // Check bit 1 for Crank Revolution Data
-    // Cadence data (Accumulated Crank Revolutions and Last Crank Event Time) starts after Pedal Power Balance if present.
-    // So, use 'currentOffset' which was advanced if pedal balance was parsed.
+    bool crankDataFlagPresent = (flags & 0x02);
 
     if (crankDataFlagPresent) {
-        // Each field is 2 bytes, so we need 4 bytes from currentOffset
         if (length >= currentOffset + 4) {
             uint16_t currentCrankRevolutions = (pData[currentOffset+1] << 8) | pData[currentOffset+0];
             uint16_t currentCrankEventTime = (pData[currentOffset+3] << 8) | pData[currentOffset+2];
 
             if (firstCrankDataPacketProcessed) {
                 uint16_t deltaRevolutions;
-                if (currentCrankRevolutions < prevCrankRevolutions) { // Rollover
+                if (currentCrankRevolutions < prevCrankRevolutions) {
                     deltaRevolutions = (65535 - prevCrankRevolutions) + currentCrankRevolutions + 1;
                 } else {
                     deltaRevolutions = currentCrankRevolutions - prevCrankRevolutions;
                 }
 
-                uint16_t deltaEventTime; // In 1/1024s
-                if (currentCrankEventTime < prevCrankEventTime) { // Rollover
+                uint16_t deltaEventTime;
+                if (currentCrankEventTime < prevCrankEventTime) {
                     deltaEventTime = (65535 - prevCrankEventTime) + currentCrankEventTime + 1;
                 } else {
                     deltaEventTime = currentCrankEventTime - prevCrankEventTime;
@@ -99,16 +97,46 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
 
             prevCrankRevolutions = currentCrankRevolutions;
             prevCrankEventTime = currentCrankEventTime;
-
+            currentOffset += 4; // Advance offset after cadence data
         } else {
             Serial.println("Crank data flag set, but data length insufficient for crank fields.");
             firstCrankDataPacketProcessed = false;
             finalCadence = 0;
         }
     } else {
-        Serial.println("Crank Revolution Data not present in flags.");
+        // Serial.println("Crank Revolution Data not present in flags."); // Can be noisy
         firstCrankDataPacketProcessed = false;
         finalCadence = 0;
+    }
+
+    // --- Parse Top/Bottom Dead Spot Angles ---
+    bool extremeAnglesFlagPresent = (flags & (1 << 8));
+
+    if (s_deadSpotAnglesSupported && extremeAnglesFlagPresent) {
+        // Serial.println("Extreme Angles flag present and feature supported."); // Can be noisy
+        if (flags & (1 << 9)) { // Top Dead Spot Angle Present
+            if (length >= currentOffset + 2) {
+                finalTopDeadSpotAngle = (pData[currentOffset+1] << 8) | pData[currentOffset+0];
+                finalTopDeadSpotAvailable = true;
+                currentOffset += 2;
+                // Serial.printf("Parsed TDS Angle: %u\n", finalTopDeadSpotAngle);
+            } else {
+                Serial.println("TDS Angle flag set, but data length insufficient.");
+            }
+        }
+        if (flags & (1 << 10)) { // Bottom Dead Spot Angle Present
+            if (length >= currentOffset + 2) {
+                finalBottomDeadSpotAngle = (pData[currentOffset+1] << 8) | pData[currentOffset+0];
+                finalBottomDeadSpotAvailable = true;
+                currentOffset += 2;
+                // Serial.printf("Parsed BDS Angle: %u\n", finalBottomDeadSpotAngle);
+            } else {
+                Serial.println("BDS Angle flag set, but data length insufficient.");
+            }
+        }
+    } else {
+        // if (!s_deadSpotAnglesSupported) { /* Serial.println("TDS/BDS angles feature not supported by device."); */ }
+        // if (!extremeAnglesFlagPresent && s_deadSpotAnglesSupported) { /* Serial.println("Extreme Angles flag not present in this packet."); */ }
     }
 
     // --- Update Shared Data ---
@@ -117,13 +145,20 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
         g_powerCadenceData.cadence = finalCadence;
         g_powerCadenceData.left_pedal_balance_percent = finalLeftPedalBalance;
         g_powerCadenceData.pedal_balance_available = finalBalanceAvailable;
-        // BLE status fields are updated elsewhere and should not be overwritten here
-        // unless explicitly intended (e.g. g_powerCadenceData.newData = true;)
-        g_powerCadenceData.newData = true; // Signal that new sensor data is available
+
+        g_powerCadenceData.top_dead_spot_angle = finalTopDeadSpotAngle;
+        g_powerCadenceData.top_dead_spot_available = finalTopDeadSpotAvailable;
+        g_powerCadenceData.bottom_dead_spot_angle = finalBottomDeadSpotAngle;
+        g_powerCadenceData.bottom_dead_spot_available = finalBottomDeadSpotAvailable;
+
+        g_powerCadenceData.newData = true;
 
         xSemaphoreGive(g_dataMutex);
-        Serial.printf("Processed Data -> Power: %u W, Cadence: %u RPM, L-Balance: %.1f%% (Available: %s)\n",
-                      finalPower, finalCadence, finalLeftPedalBalance, finalBalanceAvailable ? "Yes" : "No");
+        Serial.printf("Processed Data -> P: %u, C: %u, LBal: %.1f%%(%s), TDS: %u(%s), BDS: %u(%s)\n",
+                      finalPower, finalCadence,
+                      finalLeftPedalBalance, finalBalanceAvailable ? "Y" : "N",
+                      finalTopDeadSpotAngle, finalTopDeadSpotAvailable ? "Y" : "N",
+                      finalBottomDeadSpotAngle, finalBottomDeadSpotAvailable ? "Y" : "N");
     } else {
         Serial.println("NotifyCallback: Failed to get mutex for data update.");
     }
@@ -254,6 +289,7 @@ bool connectToServer() {
     Serial.println("Successfully connected to device.");
 
     BLERemoteService* pSvc = nullptr;
+    s_deadSpotAnglesSupported = false; // Reset before checking features of newly connected device
     try {
         pSvc = pClient->getService(CYCLING_POWER_SERVICE_UUID);
     } catch (const std::exception& e) { // NimBLE uses exceptions for some errors
@@ -261,24 +297,69 @@ bool connectToServer() {
         Serial.println(e.what());
     }
 
-    if (!pSvc) {
-        Serial.println("Failed to find Cycling Power Service on connected device.");
-        pClient->disconnect(); // Disconnect if service not found
-        // pClient will be set to nullptr by onDisconnect callback
-        return false;
-    }
-    Serial.println("Found Cycling Power Service.");
+    if (pSvc) { // Successfully got Cycling Power Service
+        Serial.println("Found Cycling Power Service");
 
-    pCyclingPowerMeasurementChar = pSvc->getCharacteristic(CYCLING_POWER_MEASUREMENT_UUID);
-    if (!pCyclingPowerMeasurementChar) {
-        Serial.println("Failed to find Cycling Power Measurement Characteristic.");
+        // Attempt to read Cycling Power Feature characteristic (0x2A65)
+        BLERemoteCharacteristic* pFeatureChar = nullptr;
+        try {
+            pFeatureChar = pSvc->getCharacteristic(NimBLEUUID((uint16_t)0x2A65));
+        } catch (const std::exception& e) {
+            Serial.print("Exception getting Feature characteristic: ");
+            Serial.println(e.what());
+        }
+
+        if (pFeatureChar && pFeatureChar->canRead()) {
+            std::string featuresValue = pFeatureChar->readValue();
+            if (featuresValue.length() >= 4) { // Feature is uint32_t
+                uint32_t featuresBitmask = 0;
+                // Assuming little-endian encoding for the characteristic value
+                featuresBitmask |= (uint32_t)featuresValue[0];
+                featuresBitmask |= (uint32_t)featuresValue[1] << 8;
+                featuresBitmask |= (uint32_t)featuresValue[2] << 16;
+                featuresBitmask |= (uint32_t)featuresValue[3] << 24;
+
+                Serial.printf("Cycling Power Features Bitmask: 0x%08X\n", featuresBitmask);
+                // Check Bit 6 for "Top and Bottom Dead Spot Angles Supported"
+                if (featuresBitmask & (1 << 6)) {
+                    s_deadSpotAnglesSupported = true;
+                    Serial.println("Feature: Top/Bottom Dead Spot Angles SUPPORTED.");
+                } else {
+                    s_deadSpotAnglesSupported = false;
+                    Serial.println("Feature: Top/Bottom Dead Spot Angles NOT supported.");
+                }
+                // Update shared struct, useful for display task to know support without waiting for data
+                if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                    g_powerCadenceData.dead_spot_angles_supported = s_deadSpotAnglesSupported;
+                    xSemaphoreGive(g_dataMutex);
+                }
+
+            } else {
+                Serial.println("Failed to read valid Cycling Power Features or length too short.");
+                s_deadSpotAnglesSupported = false; // Default if not readable
+            }
+        } else {
+            Serial.println("Cycling Power Feature characteristic (0x2A65) not found or not readable.");
+            s_deadSpotAnglesSupported = false; // Default if not found
+        }
+
+        // Now get the measurement characteristic
+        pCyclingPowerMeasurementChar = pSvc->getCharacteristic(CYCLING_POWER_MEASUREMENT_UUID);
+        if (!pCyclingPowerMeasurementChar) {
+            Serial.println("Failed to find Cycling Power Measurement Characteristic.");
+            pClient->disconnect();
+            return false;
+        }
+        Serial.println("Found Cycling Power Measurement Characteristic.");
+
+    } else { // if (!pSvc)
+        Serial.println("Failed to find Cycling Power Service on connected device.");
         pClient->disconnect();
         return false;
     }
-    Serial.println("Found Cycling Power Measurement Characteristic.");
 
     if (pCyclingPowerMeasurementChar->canNotify()) {
-        if (!pCyclingPowerMeasurementChar->subscribe(true, notifyCallback, false)) { // false for notifications, true for indications
+        if (!pCyclingPowerMeasurementChar->subscribe(true, notifyCallback, false)) {
             Serial.println("Failed to subscribe to characteristic notifications.");
             pClient->disconnect();
             return false;
