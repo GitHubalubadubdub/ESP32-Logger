@@ -4,7 +4,11 @@
 // #include "DataBuffer.h"     // Removed
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7789.h>
-#include <SPI.h>
+//#include <SPI.h>
+#include <Fonts/FreeSans12pt7b.h>
+#include "Adafruit_MAX1704X.h"
+
+Adafruit_MAX17048 lipo;
 
 // Button helper functions (defined in main.cpp) - REMOVED
 // extern bool isButtonAPressed(); 
@@ -17,9 +21,9 @@
 // MOSI: 35, SCK: 36 // These are often fixed by SPIClass
 // #define TFT_BL        42 // Removed, using TFT_BACKLITE from board variant
 
-SPIClass spi_display(HSPI); // Define SPIClass object for HSPI (Attempting HSPI instead of VSPI)
+//SPIClass spi_display(HSPI); // Define SPIClass object for HSPI (Attempting HSPI instead of VSPI)
 
-Adafruit_ST7789 tft = Adafruit_ST7789(&spi_display, TFT_CS, TFT_DC, TFT_RST); // Pass SPIClass pointer
+Adafruit_ST7789 display = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
 GFXcanvas16 canvas(240, 135); // Added canvas
 
 // Global system state variable (defined in main.cpp) - REMOVED
@@ -48,57 +52,71 @@ void displayUpdateTask(void *pvParameters) {
         return;
     }
 
-    // Removed initial diagnostic sequence
-    // tft.fillScreen(ST77XX_BLUE); 
-    // Serial.println("Attempted to fill screen BLUE.");
-    // vTaskDelay(pdMS_TO_TICKS(1000)); 
-    // tft.invertDisplay(true);
-    // Serial.println("Attempted to invert display.");
-    // vTaskDelay(pdMS_TO_TICKS(1000));
-    // tft.fillScreen(ST77XX_YELLOW); 
-    // Serial.println("Attempted to fill screen YELLOW (after inversion).");
-    // vTaskDelay(pdMS_TO_TICKS(1000));
-    // tft.invertDisplay(false); 
-    // Serial.println("Attempted to revert display inversion.");
-    // vTaskDelay(pdMS_TO_TICKS(1000));
 
-    for (;;) {
-        static int x_coord = 0;
-        digitalWrite(TFT_BACKLITE, HIGH); // Continuously assert backlight
 
-        // Draw a red square
-        tft.fillRect(x_coord, 0, 10, 10, ST77XX_RED); 
-        Serial.println("Drew red rectangle.");
-        vTaskDelay(pdMS_TO_TICKS(500));
-        
-        // Erase the square by drawing a black one over it
-        tft.fillRect(x_coord, 0, 10, 10, ST77XX_BLACK); 
-        Serial.println("Drew black rectangle (erase).");
-        // No delay here, let the next loop iteration's delay handle overall timing
+    canvas.fillScreen(ST77XX_BLACK);
+    canvas.setCursor(0, 17); // Note: For FreeFonts, cursor Y is top. Font height for 12pt is >17. Consider increasing Y.
+    canvas.setTextColor(ST77XX_RED);
+    canvas.println("Adafruit Feather");
+    canvas.setTextColor(ST77XX_YELLOW);
+    canvas.println("ESP32-S3 TFT Demo");
 
-        x_coord = (x_coord + 10);
-        if (x_coord >= tft.width()) { // Use tft.width() to get current screen width
-            x_coord = 0;
-        }
-        vTaskDelay(pdMS_TO_TICKS(500)); // Overall loop delay
+    canvas.setTextColor(ST77XX_GREEN); 
+    canvas.print("Battery: ");
+    canvas.setTextColor(ST77XX_WHITE);
+    canvas.print(lipo.cellVoltage(), 1);
+    canvas.print(" V  /  ");
+    canvas.print(lipo.cellPercent(), 0);
+    canvas.println("%");
+
+    canvas.setTextColor(ST77XX_BLUE); 
+    canvas.print("I2C: ");
+    canvas.setTextColor(ST77XX_WHITE);
+
+    canvas.setTextColor(ST77XX_MAGENTA); // Color for "Buttons: " label
+    canvas.print("Buttons: ");
+    canvas.setTextColor(ST77XX_WHITE); // Color for button states
+    bool any_button_pressed = false;
+    if (!digitalRead(0)) {
+      canvas.print("D0 ");
+      any_button_pressed = true;
+      Serial.println("Button D0 pressed");
     }
+    if (digitalRead(1)) {
+      canvas.print("D1 ");
+      any_button_pressed = true;
+      Serial.println("Button D1 pressed");
+    }
+    if (digitalRead(2)) {
+      canvas.print("D2 ");
+      any_button_pressed = true;
+      Serial.println("Button D2 pressed");
+    }
+    if (!any_button_pressed) {
+        canvas.print("None");
+    }
+    canvas.println(""); // Newline after buttons
+
+    display.drawRGBBitmap(0, 0, canvas.getBuffer(), 240, 135);
+    // pinMode(TFT_BACKLITE, OUTPUT); // Moved to setup
+    digitalWrite(TFT_BACKLITE, HIGH); // Ensure backlight is on
+    vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 // --- Display Initialization ---
 bool initializeDisplay() {
-    pinMode(TFT_BACKLITE, OUTPUT);
-    digitalWrite(TFT_BACKLITE, HIGH);
-    // SCK and MOSI should be defined in the board variant (pins_arduino.h)
-    // For Adafruit ESP32-S3 TFT Feather: SCK is 36, MOSI is 35.
-    spi_display.setFrequency(20000000); // Set SPI clock to 20MHz
-    Serial.println("Set spi_display (HSPI) frequency to 20MHz.");
-    spi_display.begin(SCK, -1, MOSI, -1); // SCK & MOSI are from board variant
-    Serial.println("spi_display (HSPI) .begin(SCK, -1, MOSI, -1) called.");
-    tft.init(135, 240); // Initialize ST7789 with 135x240 for landscape after rotation
-    tft.setRotation(3); 
-    // Remove direct tft.fillScreen, tft.setTextColor, tft.setTextSize, tft.setCursor, tft.println
-    // These will be done on the canvas.
-    tft.fillScreen(ST77XX_BLACK); // Optionally, fill screen black once on init
+    display.init(135, 240);           // Init ST7789 240x135
+    display.setRotation(3);
+    pinMode(TFT_BACKLITE, OUTPUT);    // Configure backlight pin mode once
+    digitalWrite(TFT_BACKLITE, HIGH); // Turn backlight on
+
+    canvas.setFont(&FreeSans12pt7b);
+    canvas.setTextColor(ST77XX_WHITE);
+
+    pinMode(0, INPUT_PULLUP);
+    pinMode(1, INPUT_PULLDOWN);
+    pinMode(2, INPUT_PULLDOWN);
+
     Serial.println("Display Initialized with canvas setup.");
     vTaskDelay(pdMS_TO_TICKS(100)); // Small delay after init commands
     return true;
@@ -109,3 +127,5 @@ bool initializeDisplay() {
 
 // --- Display Update Function --- REMOVED
 // void updateDisplay() { ... }
+
+ // <-- Added closing brace to fix 'expected '}' at end of input' error
