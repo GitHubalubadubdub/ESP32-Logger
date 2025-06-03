@@ -50,7 +50,11 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
 
 
             if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-                g_powerCadenceData.power = (uint16_t)max(0, power); // Ensure power is not negative
+                if (power < 0) {
+                    g_powerCadenceData.power = 0;
+                } else {
+                    g_powerCadenceData.power = (uint16_t)power;
+                }
                 g_powerCadenceData.cadence = cadence; // Update with actual cadence once calculation is implemented
                 g_powerCadenceData.newData = true; // Flag for other tasks (e.g., display)
                 xSemaphoreGive(g_dataMutex);

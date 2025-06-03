@@ -111,12 +111,9 @@ bool initializeDisplay() {
 
   TB.neopixelPin = PIN_NEOPIXEL;
   TB.neopixelNum = 1;
-  if (!TB.begin()) { // Check if begin was successful
-    Serial.println("Failed to initialize NeoPixel Testbed.");
-    // Potentially return false or handle error
-  } else {
-    TB.setColor(0x000020); // Dim blue during init
-  }
+  TB.begin(); // Corrected: TB.begin() is void
+  Serial.println(F("TestBed initialized.")); // Optional log
+  TB.setColor(0x000020); // Dim blue during init, can be changed to WHITE or other color as per original intent
 
   display.init(135, 240);           // Init ST7789 240x135 TFT
   display.setRotation(3);           // Rotate to landscape
