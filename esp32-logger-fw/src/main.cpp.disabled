@@ -1,9 +1,14 @@
 #include <Arduino.h>
 #include "config.h"
+#include "DataAcquisitionTask.h"
+#include "SdLoggingTask.h"
 #include "DisplayUpdateTask.h"
-
+#include "BleManagerTask.h"
+#include "DataBuffer.h" // Needed for psramDataBuffer definition
+// #include "WifiHandlerTask.h" // Uncomment when ready
 
 // Global variable definitions
+DataBuffer<LogRecordV1> psramDataBuffer(PSRAM_BUFFER_SIZE_RECORDS);
 SystemState currentSystemState = STATE_INITIALIZING; // Define currentSystemState here
 
 void setup() {
@@ -40,8 +45,8 @@ void setup() {
     // Core 0 for time-critical tasks if any, Core 1 for others / comms
     // xTaskCreatePinnedToCore(dataAcquisitionTask, "DataAcqTask", 4096, NULL, 5, NULL, 0); 
     // xTaskCreatePinnedToCore(sdLoggingTask, "SDLogTask", 4096, NULL, 3, NULL, 1);       
-    xTaskCreatePinnedToCore(displayUpdateTask, "DisplayTask", 4096, NULL, 2, NULL, 0);
-    //xTaskCreatePinnedToCore(bleManagerTask, "BLETask", 8192, NULL, 4, NULL, 1); 
+    xTaskCreatePinnedToCore(displayUpdateTask, "DisplayTask", 4096, NULL, 2, NULL, 1);
+    xTaskCreatePinnedToCore(bleManagerTask, "BLETask", 8192, NULL, 4, NULL, 1); 
     // xTaskCreatePinnedToCore(wifiHandlerTask, "WiFiTask", 4096, NULL, 3, NULL, 1);
 
     Serial.println("Setup complete. Tasks will start soon.");
