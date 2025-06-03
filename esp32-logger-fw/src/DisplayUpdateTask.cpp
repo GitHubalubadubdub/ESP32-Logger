@@ -90,6 +90,8 @@ bool initializeDisplay() {
     digitalWrite(TFT_BACKLITE, HIGH);
     // SCK and MOSI should be defined in the board variant (pins_arduino.h)
     // For Adafruit ESP32-S3 TFT Feather: SCK is 36, MOSI is 35.
+    spi_display.setFrequency(20000000); // Set SPI clock to 20MHz
+    Serial.println("Set spi_display (HSPI) frequency to 20MHz.");
     spi_display.begin(SCK, -1, MOSI, -1); // SCK & MOSI are from board variant
     Serial.println("spi_display (HSPI) .begin(SCK, -1, MOSI, -1) called.");
     tft.init(135, 240); // Initialize ST7789 with 135x240 for landscape after rotation
