@@ -66,8 +66,7 @@ void displayUpdateTask(void *pvParameters) {
 
   for (;;) { // Infinite loop for the task
     // --- Button Logic for Mode Switching ---
-    pinMode(MODE_SWITCH_BUTTON_PIN, INPUT_PULLUP);
-    Serial.printf("Button D1 (GPIO%d) State: %d\n", MODE_SWITCH_BUTTON_PIN, digitalRead(MODE_SWITCH_BUTTON_PIN));
+    Serial.printf("Button D2 (GPIO%d) State: %d\n", MODE_SWITCH_BUTTON_PIN, digitalRead(MODE_SWITCH_BUTTON_PIN));
     if (digitalRead(MODE_SWITCH_BUTTON_PIN) == LOW) {
         if (millis() - lastButtonPressTime > debounceDelay) {
             currentDisplayMode = (currentDisplayMode == DISPLAY_POWER) ? DISPLAY_GPS : DISPLAY_POWER;
@@ -228,7 +227,7 @@ bool initializeDisplay() {
 
   // Initialize Mode Switch Button
   pinMode(MODE_SWITCH_BUTTON_PIN, INPUT_PULLUP);
-  Serial.println("Mode switch button (GPIO" + String(MODE_SWITCH_BUTTON_PIN) + ") initialized.");
+  Serial.println("Mode switch button D2 (GPIO" + String(MODE_SWITCH_BUTTON_PIN) + ") initialized.");
 
   TB.neopixelPin = PIN_NEOPIXEL;
   TB.neopixelNum = 1;

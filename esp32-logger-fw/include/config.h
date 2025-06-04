@@ -23,7 +23,7 @@
 
 // Buttons (ESP32-S3 Reverse TFT Feather)
 #define BUTTON_A_PIN GPIO_NUM_0  // BOOT/D0 button
-#define BUTTON_B_PIN GPIO_NUM_1  // USER/D1 button
+#define BUTTON_B_PIN GPIO_NUM_4  // USER/D2 button (GPIO4)
 // #define BUTTON_C_PIN GPIO_NUM_XX // If a third button was identified
 
 // TFT Display (Built-in, specific pins managed by library, but good to note)
