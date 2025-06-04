@@ -28,7 +28,7 @@ enum DisplayMode { DISPLAY_POWER, DISPLAY_GPS };
 static DisplayMode currentDisplayMode = DISPLAY_POWER;
 const int MODE_SWITCH_BUTTON_PIN = BUTTON_B_PIN; // Use BUTTON_B_PIN from config.h
 static unsigned long lastButtonPressTime = 0;
-const unsigned long debounceDelay = 250; // milliseconds for button debounce
+const unsigned long debounceDelay = 50; // milliseconds for button debounce
 
 
 bool initializeDisplay(); // Already in .h but good practice for .cpp internal structure
@@ -67,12 +67,29 @@ void displayUpdateTask(void *pvParameters) {
   for (;;) { // Infinite loop for the task
     // --- Button Logic for Mode Switching ---
     Serial.printf("Button D2 (GPIO%d) State: %d\n", MODE_SWITCH_BUTTON_PIN, digitalRead(MODE_SWITCH_BUTTON_PIN));
-    if (digitalRead(MODE_SWITCH_BUTTON_PIN) == LOW) {
-        if (millis() - lastButtonPressTime > debounceDelay) {
+
+    // New more sensitive button detection logic
+    bool buttonSignalDetected = false;
+    // Try to detect a LOW signal over a short period by polling rapidly
+    // Note: digitalRead() itself is fast. The loop is to catch quick transitions
+    // that might occur between display task iterations if it were sleeping longer.
+    for (int i = 0; i < 5; ++i) {
+        if (digitalRead(MODE_SWITCH_BUTTON_PIN) == LOW) {
+            buttonSignalDetected = true;
+            break;
+        }
+        // Consider adding a very short delay if absolutely necessary, like delayMicroseconds(100) or vTaskDelay(0) to yield,
+        // but for now, let's try without to maximize sensitivity during this task's slice.
+        // The main task delay vTaskDelay(pdMS_TO_TICKS(250)) at the end of the displayUpdateTask loop will prevent this from hogging CPU.
+    }
+
+    if (buttonSignalDetected) {
+        if (millis() - lastButtonPressTime > debounceDelay) { // debounceDelay is now 50ms
             currentDisplayMode = (currentDisplayMode == DISPLAY_POWER) ? DISPLAY_GPS : DISPLAY_POWER;
             lastButtonPressTime = millis();
-            Serial.println("Display mode switched to: " + String(currentDisplayMode == DISPLAY_POWER ? "POWER" : "GPS"));
-            canvas.fillScreen(ST77XX_BLACK); // Clear screen immediately on mode change
+            Serial.print("Display Mode Switched to: ");
+            Serial.println(currentDisplayMode == DISPLAY_POWER ? "POWER" : "GPS");
+            canvas.fillScreen(ST77XX_BLACK); // Clear screen on mode change
         }
     }
 
