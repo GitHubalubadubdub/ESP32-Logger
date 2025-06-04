@@ -28,6 +28,7 @@ enum DisplayMode { DISPLAY_POWER, DISPLAY_GPS };
 static DisplayMode currentDisplayMode = DISPLAY_POWER;
 const int MODE_SWITCH_BUTTON_PIN = BUTTON_B_PIN; // Use BUTTON_B_PIN from config.h
 static unsigned long lastButtonPressTime = 0;
+static bool buttonAlreadyProcessed = false; // Added for single action per press logic
 const unsigned long debounceDelay = 50; // milliseconds for button debounce
 
 
@@ -68,29 +69,30 @@ void displayUpdateTask(void *pvParameters) {
     // --- Button Logic for Mode Switching ---
     Serial.printf("Button D2 (GPIO%d) State: %d\n", MODE_SWITCH_BUTTON_PIN, digitalRead(MODE_SWITCH_BUTTON_PIN));
 
-    // New more sensitive button detection logic
-    bool buttonSignalDetected = false;
-    // Try to detect a LOW signal over a short period by polling rapidly
-    // Note: digitalRead() itself is fast. The loop is to catch quick transitions
-    // that might occur between display task iterations if it were sleeping longer.
-    for (int i = 0; i < 5; ++i) {
-        if (digitalRead(MODE_SWITCH_BUTTON_PIN) == HIGH) {
-            buttonSignalDetected = true;
-            break;
-        }
-        // Consider adding a very short delay if absolutely necessary, like delayMicroseconds(100) or vTaskDelay(0) to yield,
-        // but for now, let's try without to maximize sensitivity during this task's slice.
-        // The main task delay vTaskDelay(pdMS_TO_TICKS(250)) at the end of the displayUpdateTask loop will prevent this from hogging CPU.
-    }
+    bool currentButtonStateIsHigh = (digitalRead(MODE_SWITCH_BUTTON_PIN) == HIGH);
 
-    if (buttonSignalDetected) {
-        if (millis() - lastButtonPressTime > debounceDelay) { // debounceDelay is now 50ms
-            currentDisplayMode = (currentDisplayMode == DISPLAY_POWER) ? DISPLAY_GPS : DISPLAY_POWER;
-            lastButtonPressTime = millis();
-            Serial.print("Display Mode Switched to: ");
-            Serial.println(currentDisplayMode == DISPLAY_POWER ? "POWER" : "GPS");
-            canvas.fillScreen(ST77XX_BLACK); // Clear screen on mode change
+    if (currentButtonStateIsHigh) {
+        if (!buttonAlreadyProcessed) { // Only process if this is a "new" press
+            if (millis() - lastButtonPressTime > debounceDelay) {
+                currentDisplayMode = (currentDisplayMode == DISPLAY_POWER) ? DISPLAY_GPS : DISPLAY_POWER;
+                lastButtonPressTime = millis(); // Update time of this processed action
+                Serial.print("Display Mode Switched to: ");
+                Serial.println(currentDisplayMode == DISPLAY_POWER ? "POWER" : "GPS");
+                canvas.fillScreen(ST77XX_BLACK);
+                buttonAlreadyProcessed = true; // Mark as processed for this press
+            }
         }
+    } else {
+        // Button is not pressed (LOW with INPUT_PULLDOWN setup)
+        // Reset the processed flag, ready for the next distinct press.
+        // Also, reset lastButtonPressTime to make the next press responsive after release.
+        if (buttonAlreadyProcessed) {
+             // Consider this reset carefully. Resetting to 0 might make it too sensitive
+             // if there's bounce on release. A safer reset might be:
+             // lastButtonPressTime = millis() - debounceDelay; // Ensure next press isn't blocked by this release
+             // For now, let's stick to the simpler model as per plan, can refine if needed.
+        }
+        buttonAlreadyProcessed = false;
     }
 
     canvas.fillScreen(ST77XX_BLACK); // Clear canvas for current mode's content
