@@ -74,7 +74,7 @@ void displayUpdateTask(void *pvParameters) {
     // Note: digitalRead() itself is fast. The loop is to catch quick transitions
     // that might occur between display task iterations if it were sleeping longer.
     for (int i = 0; i < 5; ++i) {
-        if (digitalRead(MODE_SWITCH_BUTTON_PIN) == LOW) {
+        if (digitalRead(MODE_SWITCH_BUTTON_PIN) == HIGH) {
             buttonSignalDetected = true;
             break;
         }
@@ -243,7 +243,7 @@ bool initializeDisplay() {
   digitalWrite(TFT_BACKLITE, HIGH); // Turn on backlight early
 
   // Initialize Mode Switch Button
-  pinMode(MODE_SWITCH_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(MODE_SWITCH_BUTTON_PIN, INPUT_PULLDOWN);
   Serial.println("Mode switch button D2 (GPIO" + String(MODE_SWITCH_BUTTON_PIN) + ") initialized.");
 
   TB.neopixelPin = PIN_NEOPIXEL;
