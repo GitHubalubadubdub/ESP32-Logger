@@ -154,11 +154,13 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
         g_powerCadenceData.newData = true;
 
         xSemaphoreGive(g_dataMutex);
+        /*
         Serial.printf("Processed Data -> P: %u, C: %u, LBal: %.1f%%(%s), TDS: %u(%s), BDS: %u(%s)\n",
                       finalPower, finalCadence,
                       finalLeftPedalBalance, finalBalanceAvailable ? "Y" : "N",
                       finalTopDeadSpotAngle, finalTopDeadSpotAvailable ? "Y" : "N",
                       finalBottomDeadSpotAngle, finalBottomDeadSpotAvailable ? "Y" : "N");
+        */
     } else {
         Serial.println("NotifyCallback: Failed to get mutex for data update.");
     }
@@ -208,15 +210,15 @@ class ClientCallbacks : public NimBLEClientCallbacks {
 // Advertised Device Callback
 class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
-        Serial.print("BLE Advertised Device found: ");
-        Serial.print(advertisedDevice->getName().c_str());
-        Serial.print(" Addr: ");
-        Serial.print(advertisedDevice->getAddress().toString().c_str());
-        Serial.print(" RSSI: ");
-        Serial.println(advertisedDevice->getRSSI());
+        // Serial.print("BLE Advertised Device found: ");
+        // Serial.print(advertisedDevice->getName().c_str());
+        // Serial.print(" Addr: ");
+        // Serial.print(advertisedDevice->getAddress().toString().c_str());
+        // Serial.print(" RSSI: ");
+        // Serial.println(advertisedDevice->getRSSI());
 
         if (advertisedDevice->isAdvertisingService(NimBLEUUID(CYCLING_POWER_SERVICE_UUID))) {
-            Serial.println("Found Cycling Power Service in advertisement!");
+            // Serial.println("Found Cycling Power Service in advertisement!"); // Less frequent, can be kept for now
             // Check if we are already trying to connect or are connected to this device
             if (myDevice != nullptr && myDevice->getAddress().equals(advertisedDevice->getAddress()) && (doConnect || connected)) {
                 Serial.println("Already processing this device.");
@@ -224,11 +226,11 @@ class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
             }
 
             NimBLEDevice::getScan()->stop();
-            Serial.println("Scan stopped.");
+            Serial.println("Scan stopped."); // This is a state change, can be kept
             // myDevice = new NimBLEAdvertisedDevice(*advertisedDevice); // Make a copy for long term storage
             myDevice = advertisedDevice;
             doConnect = true;
-            Serial.println("Device stored, doConnect set to true.");
+            // Serial.println("Device stored, doConnect set to true."); // Less frequent
 
             if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 g_powerCadenceData.bleState = BLE_CONNECTING;

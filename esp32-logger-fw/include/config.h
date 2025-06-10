@@ -7,9 +7,9 @@
 #include <semphr.h> // For SemaphoreHandle_t
 
 // Pin Definitions
-// GPS (UART1)
-#define GPS_RX_PIN GPIO_NUM_18 // ESP32 RX from GPS TX
-#define GPS_TX_PIN GPIO_NUM_17 // ESP32 TX to GPS RX
+// GPS (using Serial2, typically UART2 on ESP32-S3)
+#define GPS_RX_PIN GPIO_NUM_38 // ESP32 RX from GPS TX (User confirmed for Adafruit GPS Featherwing)
+#define GPS_TX_PIN GPIO_NUM_39 // ESP32 TX to GPS RX (User confirmed for Adafruit GPS Featherwing)
 
 // IMU (I2C0 - Wire)
 #define IMU_SDA_PIN GPIO_NUM_8
@@ -23,7 +23,7 @@
 
 // Buttons (ESP32-S3 Reverse TFT Feather)
 #define BUTTON_A_PIN GPIO_NUM_0  // BOOT/D0 button
-#define BUTTON_B_PIN GPIO_NUM_1  // USER/D1 button
+#define BUTTON_B_PIN GPIO_NUM_4 // USER/D2 button (GPIO4)
 // #define BUTTON_C_PIN GPIO_NUM_XX // If a third button was identified
 
 // TFT Display (Built-in, specific pins managed by library, but good to note)
