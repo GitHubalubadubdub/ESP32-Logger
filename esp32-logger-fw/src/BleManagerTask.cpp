@@ -570,6 +570,12 @@ void bleManagerTask(void *pvParameters) {
     Serial.println("BLE Scanner configured. Starting main loop."); // One-time status
 
     for (;;) {
+        if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+            if (g_debugSettings.otherDebugStreamOn) {
+                Serial.printf("BLE_TASK: Check scan: connected=%d, isScanning=%d, doConnect=%d\n", connected, pBLEScan->isScanning(), doConnect);
+            }
+            xSemaphoreGive(g_debugSettingsMutex);
+        }
         if (doConnect && myDevice != nullptr && !connected) {
             if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                 if (g_debugSettings.bleActivityStreamOn) {
@@ -615,36 +621,60 @@ void bleManagerTask(void *pvParameters) {
                     g_powerCadenceData.newData = true;
                     xSemaphoreGive(g_dataMutex);
                 }
-                if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
-                    if (g_debugSettings.otherDebugStreamOn) {
-                        Serial.println("Not connected and not scanning. Starting BLE scan...");
-                    }
-                    xSemaphoreGive(g_debugSettingsMutex);
-                }
-                // pBLEScan->clearResults(); // Clear old scan results before starting
-                if (pBLEScan->start(5, nullptr, false) == 0) { // Scan for 5s, no scan_eof_cb, blocking call
-                     if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
-                         if (g_debugSettings.bleActivityStreamOn) {
-                            Serial.println("Scan started successfully.");
-                         }
-                         xSemaphoreGive(g_debugSettingsMutex);
-                     }
-                } else {
-                     // This "Failed to start scan" is already under otherDebugStreamOn. No change here.
-                     if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+
+                // If doConnect is true, we are trying to connect, not start a new general scan immediately.
+                // The existing logic for connectToServer() will be hit earlier in the loop.
+                // So, we only start a new scan if !doConnect.
+                if (!doConnect) {
+                    pBLEScan->clearResults(); // Clear results before starting a new scan
+                    if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                         if (g_debugSettings.otherDebugStreamOn) {
-                            Serial.println("Failed to start scan (already running or other error).");
+                            Serial.println("BLE_TASK: Not connected and not scanning. Starting BLE scan...");
                         }
                         xSemaphoreGive(g_debugSettingsMutex);
-                     }
-                     // If scan fails to start, update state back to IDLE or DISCONNECTED
+                    }
+
+                    // Update BLE state to scanning, as it was previously inside the if(!doConnect)
+                    if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                        g_powerCadenceData.bleState = BLE_SCANNING;
+                        // Clear device name when starting a general scan
+                        memset(g_powerCadenceData.connectedDeviceName, 0, sizeof(g_powerCadenceData.connectedDeviceName));
+                        g_powerCadenceData.newData = true;
+                        xSemaphoreGive(g_dataMutex);
+                    }
+
+
+                    if (pBLEScan->start(5, nullptr, false) == 0) { // Scan for 5s, no scan_eof_cb, blocking call
+                         if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                             if (g_debugSettings.otherDebugStreamOn) { // Changed to otherDebugStreamOn
+                                Serial.println("BLE_TASK: Scan started successfully.");
+                             }
+                             xSemaphoreGive(g_debugSettingsMutex);
+                         }
+                    } else {
+                         if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                            if (g_debugSettings.otherDebugStreamOn) {
+                                Serial.println("BLE_TASK: Failed to start scan (already running or other error).");
+                            }
+                            xSemaphoreGive(g_debugSettingsMutex);
+                         }
+                         // If scan fails to start, update state back to IDLE or DISCONNECTED
+                         if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                            g_powerCadenceData.bleState = BLE_IDLE; // Or DISCONNECTED
+                            g_powerCadenceData.newData = true;
+                            xSemaphoreGive(g_dataMutex);
+                         }
+                    }
+                }
+            } else {
+                // Serial.println("Scan in progress..."); // This can be very noisy. Wrap if uncommented.
                      if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                         g_powerCadenceData.bleState = BLE_IDLE; // Or DISCONNECTED
                         g_powerCadenceData.newData = true;
                         xSemaphoreGive(g_dataMutex);
                      }
                 }
-            } else {
+            } else { // pBLEScan->isScanning() is true
                 // Serial.println("Scan in progress..."); // This can be very noisy. Wrap if uncommented.
                 if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                     if (g_debugSettings.bleActivityStreamOn) { // Changed to bleActivityStreamOn

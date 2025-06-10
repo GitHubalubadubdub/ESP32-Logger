@@ -70,6 +70,7 @@ void displayUpdateTask(void *pvParameters) {
     // --- Button Logic for Mode Switching ---
     if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
         if (g_debugSettings.otherDebugStreamOn) {
+            Serial.println(); // Add this line to ensure the message starts on a new line
             Serial.printf("Button D2 (GPIO%d) State: %d\n", MODE_SWITCH_BUTTON_PIN, digitalRead(MODE_SWITCH_BUTTON_PIN));
         }
         xSemaphoreGive(g_debugSettingsMutex);
