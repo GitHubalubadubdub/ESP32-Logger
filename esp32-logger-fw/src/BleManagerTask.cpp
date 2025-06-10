@@ -154,11 +154,13 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
         g_powerCadenceData.newData = true;
 
         xSemaphoreGive(g_dataMutex);
-        // Serial.printf("Processed Data -> P: %u, C: %u, LBal: %.1f%%(%s), TDS: %u(%s), BDS: %u(%s)\n",
-        //               finalPower, finalCadence,
-        //               finalLeftPedalBalance, finalBalanceAvailable ? "Y" : "N",
-        //               finalTopDeadSpotAngle, finalTopDeadSpotAvailable ? "Y" : "N",
+        /*
+        Serial.printf("Processed Data -> P: %u, C: %u, LBal: %.1f%%(%s), TDS: %u(%s), BDS: %u(%s)\n",
+                      finalPower, finalCadence,
+                      finalLeftPedalBalance, finalBalanceAvailable ? "Y" : "N",
+                      finalTopDeadSpotAngle, finalTopDeadSpotAvailable ? "Y" : "N",
                       finalBottomDeadSpotAngle, finalBottomDeadSpotAvailable ? "Y" : "N");
+        */
     } else {
         Serial.println("NotifyCallback: Failed to get mutex for data update.");
     }
