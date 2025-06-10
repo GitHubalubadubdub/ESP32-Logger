@@ -48,7 +48,7 @@ void gpsTask(void *pvParameters) {
 
     for (;;) {
         Serial.println("GPS Task Loop Alive"); // DEBUG LIVENESS
-        Serial.printf("GPS Serial2 Available: %d\n", Serial2.available()); // DEBUG AVAILABILITY
+        Serial.printf("GPS Serial2 Available (Before Read Loop): %d\n", Serial2.available()); // DEBUG AVAILABILITY
         bool char_read_this_cycle = false; // DEBUG: To see if any serial activity occurs
         while (Serial2.available() > 0) {
             char c = GPS.read();
@@ -108,7 +108,9 @@ void gpsTask(void *pvParameters) {
         }
         // No 'else' here for newNMEAreceived() being false, to reduce log spam.
         // We are primarily interested in what happens when a sentence *is* supposedly received.
+        // unsigned long chars_read_in_while_loop = 0; // if you implement counting inside while
+        // Serial.printf("GPS Serial2 Available (After Read Loop): %d, Chars Read This Iter: %lu\n", Serial2.available(), chars_read_in_while_loop); // DEBUG
 
-        vTaskDelay(pdMS_TO_TICKS(50));
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
