@@ -14,7 +14,7 @@ PowerCadenceData g_powerCadenceData;
 SemaphoreHandle_t g_dataMutex;
 // g_gpsDataMutex is defined in gps_handler.cpp, declared extern in gps_data.h
 // GpsData g_gpsData is defined in gps_handler.cpp, declared extern in gps_data.h
-DebugSettings g_debugSettings;
+volatile DebugSettings g_debugSettings;
 SemaphoreHandle_t g_debugSettingsMutex = NULL;
 
 

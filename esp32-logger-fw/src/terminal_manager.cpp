@@ -18,23 +18,27 @@ void print_help() {
 
 void process_command(char *command_line) {
     char *command;
-    char *argument;
-    char *saveptr; // For strtok_r
+    char *argument = NULL; // Initialize argument to NULL
+    char *saveptr;
 
-    // Get the command (first token)
     command = strtok_r(command_line, " ", &saveptr);
 
     if (command == NULL) {
         return; // Empty line
     }
 
-    // Get the argument (second token, if any)
-    argument = strtok_r(NULL, " ", &saveptr);
-
+    // Handle commands that take no arguments first
     if (strcmp(command, "help") == 0 || strcmp(command, "h") == 0) {
         print_help();
-    } else if (strcmp(command, "gps_debug") == 0) {
+        return; // Explicitly return after handling no-argument command
+    }
+
+    // For commands that require arguments, now attempt to get the argument
+    argument = strtok_r(NULL, " ", &saveptr);
+
+    if (strcmp(command, "gps_debug") == 0) {
         if (argument != NULL) {
+            // Existing logic for gps_debug
             if (xSemaphoreTake(g_debugSettingsMutex, portMAX_DELAY) == pdTRUE) {
                 if (strcmp(argument, "on") == 0) {
                     g_debugSettings.gpsDebugStreamOn = true;
@@ -52,6 +56,7 @@ void process_command(char *command_line) {
         }
     } else if (strcmp(command, "ble_debug") == 0) {
         if (argument != NULL) {
+            // Existing logic for ble_debug
             if (xSemaphoreTake(g_debugSettingsMutex, portMAX_DELAY) == pdTRUE) {
                 if (strcmp(argument, "on") == 0) {
                     g_debugSettings.bleDebugStreamOn = true;
@@ -69,6 +74,7 @@ void process_command(char *command_line) {
         }
     } else if (strcmp(command, "other_debug") == 0) {
         if (argument != NULL) {
+            // Existing logic for other_debug
             if (xSemaphoreTake(g_debugSettingsMutex, portMAX_DELAY) == pdTRUE) {
                 if (strcmp(argument, "on") == 0) {
                     g_debugSettings.otherDebugStreamOn = true;
@@ -86,6 +92,7 @@ void process_command(char *command_line) {
         }
     } else if (strcmp(command, "ble_stream") == 0) {
         if (argument != NULL) {
+            // Existing logic for ble_stream
             if (xSemaphoreTake(g_debugSettingsMutex, portMAX_DELAY) == pdTRUE) {
                 if (strcmp(argument, "on") == 0) {
                     g_debugSettings.bleActivityStreamOn = true;
@@ -103,8 +110,8 @@ void process_command(char *command_line) {
         }
     } else {
         Serial.print("Unknown command: ");
-        Serial.println(command);
-        print_help();
+        Serial.println(command); // This should now only be reached if none of the above matched
+        print_help(); // Optionally print help for unknown commands
     }
 }
 

@@ -267,7 +267,7 @@ class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         // Serial.print("BLE Advertised Device found: ");
         // This entire block is for verbose advertised device logging.
         if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
-            if (g_debugSettings.bleActivityStreamOn) { // Changed to bleActivityStreamOn
+            if (g_debugSettings.bleActivityStreamOn) {
                 // Serial.print("BLE Advertised Device found: ");
                 // Serial.print(advertisedDevice->getName().c_str());
                 // Serial.print(" Addr: ");

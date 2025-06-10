@@ -9,5 +9,5 @@ struct DebugSettings {
     bool bleActivityStreamOn = false; // Default to off for verbose BLE activity stream
 };
 
-extern DebugSettings g_debugSettings;
+extern volatile DebugSettings g_debugSettings;
 extern SemaphoreHandle_t g_debugSettingsMutex;
