@@ -4,10 +4,10 @@
 
 #include <Arduino.h>
 #include <HardwareSerial.h> // For Serial2
-#include <TinyGPS++.h>    // GPS parsing library
+#include <Adafruit_GPS.h>   // Adafruit GPS library
 
 // Define GPS UART settings
-#define GPS_SERIAL_NUM 2 // Using Serial2
+// #define GPS_SERIAL_NUM 2 // Using Serial2 - Serial2 is directly used
 #define GPS_BAUD_RATE 9600 // Default baud rate, user to verify from datasheet
 
 // Use pins from config.h. These are already defined there.
@@ -19,92 +19,83 @@
 GpsData g_gpsData; // Definition of the global GPS data structure
 SemaphoreHandle_t g_gpsDataMutex; // Definition of the global GPS data mutex
 
-TinyGPSPlus gpsParser; // TinyGPS++ object
+Adafruit_GPS GPS(&Serial2); // Adafruit GPS object using Serial2
 
 // Initialization function for GPS module specific commands (e.g., update rate)
 // This will be called once from the gpsTask.
 static void initializeGpsModule() {
     // Initialize Serial2 for GPS communication
-    // ESP32-S3 allows specifying custom RX/TX pins for HardwareSerial
     Serial2.begin(GPS_BAUD_RATE, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
     Serial.println("GPS Handler: Serial2 initialized with pins RX=" + String(GPS_RX_PIN) + ", TX=" + String(GPS_TX_PIN) + " at " + String(GPS_BAUD_RATE) + " baud.");
 
-    // Placeholder: Send command to GPS module to set update frequency to maximum supported.
-    // This is an example for a common MediaTek chipset (e.g., MTK3339) to set 10Hz.
-    // The actual command and checksum will depend on the specific GPS module used.
-    // User needs to verify this from their GPS module's datasheet.
-    // Example: Serial2.println("$PMTK220,100*2F"); // 100ms interval = 10Hz
-    // Example: Serial2.println("$PGCMD,16,0,0,0,0,0*6A"); // Another potential command type
-    Serial.println("GPS Handler: Placeholder for sending update rate configuration command to GPS module.");
-    // Add a small delay to allow the module to process the command if sent.
-    // delay(100); // Only if a command is actually sent.
+    // Initialize Adafruit_GPS library
+    GPS.begin(GPS_BAUD_RATE); // Initialize library's internal state for the baud rate
+
+    // Configure GPS module
+    GPS.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA); // Request RMC and GGA sentences
+    GPS.sendCommand(PMTK_SET_NMEA_UPDATE_10HZ);   // Set NMEA update rate to 10Hz
+    // For other rates: PMTK_SET_NMEA_UPDATE_1HZ, PMTK_SET_NMEA_UPDATE_5HZ, etc.
+    // Or use GPS.sendCommand("$PMTK220,100*2F"); for 10Hz (100ms)
+
+    Serial.println("Adafruit_GPS initialized, NMEA output set to RMCGGA, update rate set to 10Hz (attempted).");
+    // Add a small delay to allow the module to process commands if needed.
+    // delay(100); // Usually not strictly necessary for these commands
 }
 
 void gpsTask(void *pvParameters) {
     Serial.println("GPS Task started.");
     initializeGpsModule();
 
-    unsigned long lastSuccessfulFixTime = 0;
-
     for (;;) {
-        bool dataReceived = false;
+        // Read all available characters from GPS
         while (Serial2.available() > 0) {
-            if (gpsParser.encode(Serial2.read())) {
-                dataReceived = true; // Mark that we've received and processed data via encode
-            }
+            char c = GPS.read();
+            // Optional: For debugging, print characters received from GPS
+            // if (GPSECHO) { Serial.print(c); } // Define GPSECHO if needed for debugging
         }
 
-        // Check if new, valid data has been parsed after processing all available serial characters
-        if (dataReceived) { // Process only if gps.encode() returned true for any character (meaning a sentence completed)
-            if (xSemaphoreTake(g_gpsDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-                g_gpsData.is_valid = gpsParser.location.isValid() && gpsParser.satellites.isValid() && gpsParser.satellites.value() > 0;
+        // Check if a new NMEA sentence has been received and parsed by the library's internal interrupt handler
+        if (GPS.newNMEAreceived()) {
+            // Attempt to parse the last NMEA sentence stored by the library
+            // GPS.parse also clears the newNMEAreceived() flag internally.
+            if (GPS.parse(GPS.lastNMEA())) {
+                // Successfully parsed a sentence, now update g_gpsData
+                if (xSemaphoreTake(g_gpsDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                    g_gpsData.is_valid = GPS.fix; // GPS.fix is a boolean (0 or 1)
 
-                if (g_gpsData.is_valid) {
-                    g_gpsData.latitude = gpsParser.location.lat();
-                    g_gpsData.longitude = gpsParser.location.lng();
-                    lastSuccessfulFixTime = millis(); // Keep track of last good fix
-                }
-                // Update other fields even if fix is not valid, so "no fix" is current
-                g_gpsData.altitude_meters = gpsParser.altitude.isValid() ? gpsParser.altitude.meters() : 0.0f;
-                g_gpsData.speed_mps = gpsParser.speed.isValid() ? gpsParser.speed.mps() : 0.0f;
-                g_gpsData.satellites = gpsParser.satellites.isValid() ? gpsParser.satellites.value() : 0;
-
-                // Fix quality: 0 = No fix, 1 = GPS fix (SPS), 2 = DGPS fix, ...
-                // TinyGPS++ doesn't directly give NMEA GxGGA's fix quality field easily.
-                // We infer: 0 if not valid location. 1 if valid location and basic GPS.
-                // If HDOP is available and good, could indicate a better quality fix (like DGPS or RTK if module supports).
-                // For simplicity: 0 if not valid, 1 if valid. User can refine.
-                if (!g_gpsData.is_valid) {
-                    g_gpsData.fix_quality = 0; // No fix
-                } else {
-                    if (gpsParser.hdop.isValid() && gpsParser.hdop.value() < 150 && gpsParser.hdop.value() > 0) { // hdop is in 0.01 units
-                        g_gpsData.fix_quality = 2; // Good fix (like DGPS, assuming low HDOP means differential or better)
+                    if (g_gpsData.is_valid) {
+                        g_gpsData.latitude = GPS.latitudeDegrees;
+                        g_gpsData.longitude = GPS.longitudeDegrees;
+                        g_gpsData.altitude_meters = GPS.altitude;       // meters
+                        g_gpsData.speed_mps = GPS.speed * 0.514444f;  // Convert knots to m/s
+                        g_gpsData.satellites = GPS.satellites;
+                        g_gpsData.fix_quality = GPS.fixquality;
+                        // fix_quality: 0 = No fix, 1 = GPS fix, 2 = DGPS fix, 3 = PPS fix, etc.
                     } else {
-                        g_gpsData.fix_quality = 1; // Standard GPS fix
+                        // If no fix, set some values to indicate invalidity or zero
+                        g_gpsData.latitude = 0.0;
+                        g_gpsData.longitude = 0.0;
+                        g_gpsData.altitude_meters = 0.0f;
+                        g_gpsData.speed_mps = 0.0f;
+                        // GPS.satellites might still report count even without fix,
+                        // but setting to 0 if !GPS.fix is common.
+                        g_gpsData.satellites = GPS.satellites; // Or 0 if preferred when no fix
+                        g_gpsData.fix_quality = 0;
                     }
+                    g_gpsData.last_update_millis = millis();
+
+                    xSemaphoreGive(g_gpsDataMutex);
+                } else {
+                    Serial.println("GPS Task: Failed to take mutex to update g_gpsData.");
                 }
-
-                g_gpsData.last_update_millis = millis(); // Timestamp of when g_gpsData was last updated
-
-                xSemaphoreGive(g_gpsDataMutex);
-            } else {
-                Serial.println("GPS Task: Failed to take mutex to update g_gpsData.");
             }
+            // If GPS.parse() returns false, the sentence was not successfully parsed.
+            // The newNMEAreceived flag is already handled by GPS.parse() or by accessing GPS.lastNMEA().
         }
 
-        // If no valid fix for a while, explicitly mark data as invalid
-        if (g_gpsData.is_valid && (millis() - lastSuccessfulFixTime > 5000)) { // 5 seconds timeout
-             if (xSemaphoreTake(g_gpsDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-                g_gpsData.is_valid = false;
-                g_gpsData.fix_quality = 0;
-                Serial.println("GPS Task: Marking GPS data as invalid due to timeout since last fix.");
-                xSemaphoreGive(g_gpsDataMutex);
-             }
-        }
-
-        // Task delay. GPS data comes at its own rate (e.g., 1Hz or 10Hz).
-        // This delay is for the FreeRTOS scheduler to allow other tasks to run.
-        // A short delay is fine as the main work is event-driven by Serial2.available().
-        vTaskDelay(pdMS_TO_TICKS(20)); // Yield for other tasks, e.g., 50Hz loop
+        // Task delay.
+        // If update rate is 10Hz (100ms), parsing should be quick.
+        // A delay of 20-50ms allows other tasks to run without missing GPS updates.
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
