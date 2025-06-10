@@ -1,4 +1,5 @@
 #include "gps_handler.h"
+#include "shared_state.h" // Added for g_debugSettings
 #include "gps_data.h" // For GpsData struct and g_gpsData externs
 #include "config.h"   // For GPS_RX_PIN, GPS_TX_PIN if used directly (or through defines below)
 
@@ -47,31 +48,50 @@ void gpsTask(void *pvParameters) {
     initializeGpsModule();
 
     for (;;) {
-        Serial.println("GPS Task Loop Alive"); // DEBUG LIVENESS
-        Serial.printf("GPS Serial2 Available (Before Read Loop): %d\n", Serial2.available()); // DEBUG AVAILABILITY
-        bool char_read_this_cycle = false; // DEBUG: To see if any serial activity occurs
+        // GPS Task Loop Alive and Serial2 Available messages are general debug, not continuous stream
+        // Serial.println("GPS Task Loop Alive");
+        // Serial.printf("GPS Serial2 Available (Before Read Loop): %d\n", Serial2.available());
+
+        bool char_read_this_cycle = false;
         while (Serial2.available() > 0) {
             char c = GPS.read();
-            char_read_this_cycle = true; // DEBUG
-            // For very verbose debugging, uncomment:
-            // Serial.print(c);
+            char_read_this_cycle = true;
+            // Conditional printing for raw NMEA character stream
+            if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                if (g_debugSettings.gpsDebugStreamOn) {
+                    // Serial.print(c); // Example: If you want to print raw NMEA stream
+                }
+                xSemaphoreGive(g_debugSettingsMutex);
+            }
         }
 
-        // Optional DEBUG: to reduce noise, only print if chars were read.
-        // if (char_read_this_cycle) {
-        //     Serial.println("GPS: Characters processed from serial buffer this cycle.");
-        // }
-
         if (GPS.newNMEAreceived()) {
-            Serial.println("GPS DEBUG: newNMEAreceived() is TRUE."); // DEBUG
+            // Conditional printing for "newNMEAreceived"
+            if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                if (g_debugSettings.gpsDebugStreamOn) {
+                    Serial.println("GPS DEBUG: newNMEAreceived() is TRUE.");
+                }
+                xSemaphoreGive(g_debugSettingsMutex);
+            }
 
-            char *lastNmeaSentence = GPS.lastNMEA(); // Store it if you want to print it AND parse it.
-                                                  // GPS.lastNMEA() itself clears the newNMEAreceived flag.
-            // For very verbose debugging of the NMEA sentence itself:
-            // Serial.print("NMEA: "); Serial.println(lastNmeaSentence); // DEBUG
+            char *lastNmeaSentence = GPS.lastNMEA();
 
-            if (GPS.parse(lastNmeaSentence)) { // Parse the sentence we just got
-                Serial.println("GPS DEBUG: NMEA sentence PARSED successfully!"); // DEBUG
+            // Conditional printing for the NMEA sentence itself
+            if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                if (g_debugSettings.gpsDebugStreamOn) {
+                    // Serial.print("NMEA: "); Serial.println(lastNmeaSentence);
+                }
+                xSemaphoreGive(g_debugSettingsMutex);
+            }
+
+            if (GPS.parse(lastNmeaSentence)) {
+                // Conditional printing for "NMEA sentence PARSED successfully"
+                if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                    if (g_debugSettings.gpsDebugStreamOn) {
+                        Serial.println("GPS DEBUG: NMEA sentence PARSED successfully!");
+                    }
+                    xSemaphoreGive(g_debugSettingsMutex);
+                }
                 if (xSemaphoreTake(g_gpsDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                     g_gpsData.is_valid = GPS.fix;
 
@@ -94,16 +114,30 @@ void gpsTask(void *pvParameters) {
                     g_gpsData.last_update_millis = millis();
 
                     xSemaphoreGive(g_gpsDataMutex);
-                    Serial.printf("GPS DEBUG: g_gpsData updated. Fix: %d, Q: %d, Sats: %d, Lat: %f, Lon: %f, Alt: %.1f, Spd: %.1f\n",
-                                  (int)GPS.fix, (int)GPS.fixquality, (int)GPS.satellites,
-                                  GPS.latitudeDegrees, GPS.longitudeDegrees, GPS.altitude, GPS.speed * 0.514444f); // DEBUG
+
+                    // Conditional printing for parsed GPS data
+                    if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                        if (g_debugSettings.gpsDebugStreamOn) {
+                            Serial.printf("GPS DEBUG: g_gpsData updated. Fix: %d, Q: %d, Sats: %d, Lat: %f, Lon: %f, Alt: %.1f, Spd: %.1f\n",
+                                          (int)GPS.fix, (int)GPS.fixquality, (int)GPS.satellites,
+                                          GPS.latitudeDegrees, GPS.longitudeDegrees, GPS.altitude, GPS.speed * 0.514444f);
+                        }
+                        xSemaphoreGive(g_debugSettingsMutex);
+                    }
                 } else {
-                    Serial.println("GPS DEBUG: Failed to take mutex to update g_gpsData.");
+                    // This is an operational message, not a continuous stream, so leave as is or make conditional if desired
+                    Serial.println("GPS DEBUG: Failed to take g_gpsDataMutex to update g_gpsData.");
                 }
             } else {
-                Serial.println("GPS DEBUG: NMEA sentence FAILED to parse."); // DEBUG
-                // Optional: Print the sentence that failed to parse, if it's not too much log spam
-                // Serial.print("Failed NMEA: "); Serial.println(lastNmeaSentence);
+                // Conditional printing for "NMEA sentence FAILED to parse"
+                if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                    if (g_debugSettings.gpsDebugStreamOn) {
+                        Serial.println("GPS DEBUG: NMEA sentence FAILED to parse.");
+                        // Optional: Print the sentence that failed to parse
+                        // Serial.print("Failed NMEA: "); Serial.println(lastNmeaSentence);
+                    }
+                    xSemaphoreGive(g_debugSettingsMutex);
+                }
             }
         }
         // No 'else' here for newNMEAreceived() being false, to reduce log spam.

@@ -4,6 +4,8 @@
 #include "BleManagerTask.h" // Include BLE Manager Task header
 #include "gps_handler.h"    // For gpsTask
 #include "gps_data.h"       // For g_gpsDataMutex
+#include "shared_state.h"
+#include "terminal_manager.h"
 
 
 // Global variable definitions
@@ -12,6 +14,8 @@ PowerCadenceData g_powerCadenceData;
 SemaphoreHandle_t g_dataMutex;
 // g_gpsDataMutex is defined in gps_handler.cpp, declared extern in gps_data.h
 // GpsData g_gpsData is defined in gps_handler.cpp, declared extern in gps_data.h
+DebugSettings g_debugSettings;
+SemaphoreHandle_t g_debugSettingsMutex = NULL;
 
 
 void setup() {
@@ -35,6 +39,15 @@ void setup() {
         while(1); // Halt execution
     } else {
         Serial.println("GPS data mutex created successfully.");
+    }
+
+    g_debugSettingsMutex = xSemaphoreCreateMutex();
+    if (g_debugSettingsMutex == NULL) {
+        Serial.println("Error: Failed to create debugSettingsMutex!");
+        // Handle error appropriately, maybe halt or indicate critical failure
+        while(1); // Halt
+    } else {
+        Serial.println("Debug settings mutex created successfully.");
     }
 
     // Initialize PSRAM if available
@@ -70,6 +83,20 @@ void setup() {
     xTaskCreatePinnedToCore(gpsTask, "GPSTask", 4096, NULL, 3, NULL, 1);           // Uses g_gpsDataMutex
     Serial.println("GPS Task creation attempted."); // Confirmation message
     // xTaskCreatePinnedToCore(wifiHandlerTask, "WiFiTask", 4096, NULL, 3, NULL, 1);
+
+    xTaskCreate(
+        terminal_task,          // Task function
+        "TerminalTask",         // Name of the task (for debugging)
+        4096,                   // Stack size in words
+        NULL,                   // Task input parameter
+        1,                      // Priority of the task
+        NULL                    // Task handle (optional)
+    );
+    Serial.println("Terminal Task creation attempted.");
+
+
+    Serial.println("\n\nWelcome to the Data Logger CLI!");
+    Serial.println("Type 'help' for a list of commands.");
 
     Serial.println("Setup complete. All tasks created. System should be running.");
 }
