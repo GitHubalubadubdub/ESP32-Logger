@@ -5,6 +5,7 @@
 struct DebugSettings {
     bool gpsDebugStreamOn = false; // Default to off
     bool bleDebugStreamOn = false; // Default to off
+    bool otherDebugStreamOn = false; // Default to off for other generic debug messages
 };
 
 extern DebugSettings g_debugSettings;

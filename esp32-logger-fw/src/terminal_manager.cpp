@@ -12,6 +12,7 @@ void print_help() {
     Serial.println("  help (or h)          - Prints this help message.");
     Serial.println("  gps_debug <on|off>   - Enables/disables GPS debug stream.");
     Serial.println("  ble_debug <on|off>   - Enables/disables BLE debug stream.");
+    Serial.println("  other_debug <on|off> - Enables/disables other generic debug streams.");
 }
 
 void process_command(char *command_line) {
@@ -64,6 +65,23 @@ void process_command(char *command_line) {
             }
         } else {
             Serial.println("Missing argument for ble_debug. Use 'on' or 'off'.");
+        }
+    } else if (strcmp(command, "other_debug") == 0) {
+        if (argument != NULL) {
+            if (xSemaphoreTake(g_debugSettingsMutex, portMAX_DELAY) == pdTRUE) {
+                if (strcmp(argument, "on") == 0) {
+                    g_debugSettings.otherDebugStreamOn = true;
+                    Serial.println("Other generic debug streams enabled.");
+                } else if (strcmp(argument, "off") == 0) {
+                    g_debugSettings.otherDebugStreamOn = false;
+                    Serial.println("Other generic debug streams disabled.");
+                } else {
+                    Serial.println("Invalid argument for other_debug. Use 'on' or 'off'.");
+                }
+                xSemaphoreGive(g_debugSettingsMutex);
+            }
+        } else {
+            Serial.println("Missing argument for other_debug. Use 'on' or 'off'.");
         }
     } else {
         Serial.print("Unknown command: ");

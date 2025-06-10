@@ -508,12 +508,22 @@ void bleManagerTask(void *pvParameters) {
                     g_powerCadenceData.newData = true;
                     xSemaphoreGive(g_dataMutex);
                 }
-                Serial.println("Not connected and not scanning. Starting BLE scan...");
+                if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                    if (g_debugSettings.otherDebugStreamOn) {
+                        Serial.println("Not connected and not scanning. Starting BLE scan...");
+                    }
+                    xSemaphoreGive(g_debugSettingsMutex);
+                }
                 // pBLEScan->clearResults(); // Clear old scan results before starting
                 if (pBLEScan->start(5, nullptr, false) == 0) { // Scan for 5s, no scan_eof_cb, blocking call
-                     Serial.println("Scan started successfully.");
+                     Serial.println("Scan started successfully."); // This is a general status, leave for now
                 } else {
-                     Serial.println("Failed to start scan (already running or other error).");
+                     if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                        if (g_debugSettings.otherDebugStreamOn) {
+                            Serial.println("Failed to start scan (already running or other error).");
+                        }
+                        xSemaphoreGive(g_debugSettingsMutex);
+                     }
                      // If scan fails to start, update state back to IDLE or DISCONNECTED
                      if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                         g_powerCadenceData.bleState = BLE_IDLE; // Or DISCONNECTED

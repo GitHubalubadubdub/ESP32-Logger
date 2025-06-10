@@ -1,6 +1,7 @@
 #include "DisplayUpdateTask.h"
 #include "config.h" // Includes types.h (for BleConnectionState)
 #include "gps_data.h" // For GpsData struct and g_gpsDataMutex
+#include "shared_state.h" // Added for g_debugSettings
 
 #include "Adafruit_MAX1704X.h"
 #include <Adafruit_NeoPixel.h>
@@ -67,7 +68,12 @@ void displayUpdateTask(void *pvParameters) {
 
   for (;;) { // Infinite loop for the task
     // --- Button Logic for Mode Switching ---
-    Serial.printf("Button D2 (GPIO%d) State: %d\n", MODE_SWITCH_BUTTON_PIN, digitalRead(MODE_SWITCH_BUTTON_PIN));
+    if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+        if (g_debugSettings.otherDebugStreamOn) {
+            Serial.printf("Button D2 (GPIO%d) State: %d\n", MODE_SWITCH_BUTTON_PIN, digitalRead(MODE_SWITCH_BUTTON_PIN));
+        }
+        xSemaphoreGive(g_debugSettingsMutex);
+    }
 
     bool currentButtonStateIsHigh = (digitalRead(MODE_SWITCH_BUTTON_PIN) == HIGH);
 
