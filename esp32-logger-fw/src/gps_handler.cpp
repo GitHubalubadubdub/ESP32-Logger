@@ -47,6 +47,8 @@ void gpsTask(void *pvParameters) {
     initializeGpsModule();
 
     for (;;) {
+        Serial.println("GPS Task Loop Alive"); // DEBUG LIVENESS
+        Serial.printf("GPS Serial2 Available: %d\n", Serial2.available()); // DEBUG AVAILABILITY
         bool char_read_this_cycle = false; // DEBUG: To see if any serial activity occurs
         while (Serial2.available() > 0) {
             char c = GPS.read();
