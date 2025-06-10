@@ -13,6 +13,7 @@ void print_help() {
     Serial.println("  gps_debug <on|off>   - Enables/disables GPS debug stream.");
     Serial.println("  ble_debug <on|off>   - Enables/disables BLE debug stream.");
     Serial.println("  other_debug <on|off> - Enables/disables other generic debug streams.");
+    Serial.println("  ble_stream <on|off>  - Enables/disables verbose BLE activity stream.");
 }
 
 void process_command(char *command_line) {
@@ -83,6 +84,23 @@ void process_command(char *command_line) {
         } else {
             Serial.println("Missing argument for other_debug. Use 'on' or 'off'.");
         }
+    } else if (strcmp(command, "ble_stream") == 0) {
+        if (argument != NULL) {
+            if (xSemaphoreTake(g_debugSettingsMutex, portMAX_DELAY) == pdTRUE) {
+                if (strcmp(argument, "on") == 0) {
+                    g_debugSettings.bleActivityStreamOn = true;
+                    Serial.println("BLE activity stream enabled.");
+                } else if (strcmp(argument, "off") == 0) {
+                    g_debugSettings.bleActivityStreamOn = false;
+                    Serial.println("BLE activity stream disabled.");
+                } else {
+                    Serial.println("Invalid argument for ble_stream. Use 'on' or 'off'.");
+                }
+                xSemaphoreGive(g_debugSettingsMutex);
+            }
+        } else {
+            Serial.println("Missing argument for ble_stream. Use 'on' or 'off'.");
+        }
     } else {
         Serial.print("Unknown command: ");
         Serial.println(command);
@@ -105,6 +123,7 @@ void terminal_task(void *pvParameters) {
                 // End of command
                 if (buffer_pos > 0) { // Check if there's a command to process
                     command_buffer[buffer_pos] = '\0'; // Null-terminate the string
+                    Serial.println(); // Add this line for a clean break
                     Serial.print("Received command: "); // Echo command
                     Serial.println(command_buffer);
                     process_command(command_buffer);
