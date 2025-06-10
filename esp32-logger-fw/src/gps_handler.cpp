@@ -47,55 +47,66 @@ void gpsTask(void *pvParameters) {
     initializeGpsModule();
 
     for (;;) {
-        // Read all available characters from GPS
+        bool char_read_this_cycle = false; // DEBUG: To see if any serial activity occurs
         while (Serial2.available() > 0) {
             char c = GPS.read();
-            // Optional: For debugging, print characters received from GPS
-            // if (GPSECHO) { Serial.print(c); } // Define GPSECHO if needed for debugging
+            char_read_this_cycle = true; // DEBUG
+            // For very verbose debugging, uncomment:
+            // Serial.print(c);
         }
 
-        // Check if a new NMEA sentence has been received and parsed by the library's internal interrupt handler
+        // Optional DEBUG: to reduce noise, only print if chars were read.
+        // if (char_read_this_cycle) {
+        //     Serial.println("GPS: Characters processed from serial buffer this cycle.");
+        // }
+
         if (GPS.newNMEAreceived()) {
-            // Attempt to parse the last NMEA sentence stored by the library
-            // GPS.parse also clears the newNMEAreceived() flag internally.
-            if (GPS.parse(GPS.lastNMEA())) {
-                // Successfully parsed a sentence, now update g_gpsData
+            Serial.println("GPS DEBUG: newNMEAreceived() is TRUE."); // DEBUG
+
+            char *lastNmeaSentence = GPS.lastNMEA(); // Store it if you want to print it AND parse it.
+                                                  // GPS.lastNMEA() itself clears the newNMEAreceived flag.
+            // For very verbose debugging of the NMEA sentence itself:
+            // Serial.print("NMEA: "); Serial.println(lastNmeaSentence); // DEBUG
+
+            if (GPS.parse(lastNmeaSentence)) { // Parse the sentence we just got
+                Serial.println("GPS DEBUG: NMEA sentence PARSED successfully!"); // DEBUG
                 if (xSemaphoreTake(g_gpsDataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-                    g_gpsData.is_valid = GPS.fix; // GPS.fix is a boolean (0 or 1)
+                    g_gpsData.is_valid = GPS.fix;
 
                     if (g_gpsData.is_valid) {
                         g_gpsData.latitude = GPS.latitudeDegrees;
                         g_gpsData.longitude = GPS.longitudeDegrees;
-                        g_gpsData.altitude_meters = GPS.altitude;       // meters
-                        g_gpsData.speed_mps = GPS.speed * 0.514444f;  // Convert knots to m/s
+                        g_gpsData.altitude_meters = GPS.altitude;
+                        g_gpsData.speed_mps = GPS.speed * 0.514444f;
                         g_gpsData.satellites = GPS.satellites;
                         g_gpsData.fix_quality = GPS.fixquality;
-                        // fix_quality: 0 = No fix, 1 = GPS fix, 2 = DGPS fix, 3 = PPS fix, etc.
                     } else {
-                        // If no fix, set some values to indicate invalidity or zero
-                        g_gpsData.latitude = 0.0;
-                        g_gpsData.longitude = 0.0;
+                        // Keep old data or clear some fields if no fix
+                        g_gpsData.latitude = 0.0; // Or keep stale data
+                        g_gpsData.longitude = 0.0; // Or keep stale data
                         g_gpsData.altitude_meters = 0.0f;
                         g_gpsData.speed_mps = 0.0f;
-                        // GPS.satellites might still report count even without fix,
-                        // but setting to 0 if !GPS.fix is common.
-                        g_gpsData.satellites = GPS.satellites; // Or 0 if preferred when no fix
-                        g_gpsData.fix_quality = 0;
+                        g_gpsData.satellites = GPS.satellites; // Still useful to know how many sats are visible
+                        g_gpsData.fix_quality = 0; // No fix
                     }
                     g_gpsData.last_update_millis = millis();
 
                     xSemaphoreGive(g_gpsDataMutex);
+                    Serial.printf("GPS DEBUG: g_gpsData updated. Fix: %d, Q: %d, Sats: %d, Lat: %f, Lon: %f, Alt: %.1f, Spd: %.1f\n",
+                                  (int)GPS.fix, (int)GPS.fixquality, (int)GPS.satellites,
+                                  GPS.latitudeDegrees, GPS.longitudeDegrees, GPS.altitude, GPS.speed * 0.514444f); // DEBUG
                 } else {
-                    Serial.println("GPS Task: Failed to take mutex to update g_gpsData.");
+                    Serial.println("GPS DEBUG: Failed to take mutex to update g_gpsData.");
                 }
+            } else {
+                Serial.println("GPS DEBUG: NMEA sentence FAILED to parse."); // DEBUG
+                // Optional: Print the sentence that failed to parse, if it's not too much log spam
+                // Serial.print("Failed NMEA: "); Serial.println(lastNmeaSentence);
             }
-            // If GPS.parse() returns false, the sentence was not successfully parsed.
-            // The newNMEAreceived flag is already handled by GPS.parse() or by accessing GPS.lastNMEA().
         }
+        // No 'else' here for newNMEAreceived() being false, to reduce log spam.
+        // We are primarily interested in what happens when a sentence *is* supposedly received.
 
-        // Task delay.
-        // If update rate is 10Hz (100ms), parsing should be quick.
-        // A delay of 20-50ms allows other tasks to run without missing GPS updates.
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
