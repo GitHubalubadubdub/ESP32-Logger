@@ -25,18 +25,29 @@ GFXcanvas16 canvas(240, 135);
 static bool valid_i2c[128]; // File-scope static for access by both functions
 
 // Display mode definitions
-enum DisplayMode { DISPLAY_POWER, DISPLAY_GPS };
+enum DisplayMode { 
+    DISPLAY_POWER, 
+    DISPLAY_GPS,
+    // Add new display modes above this line
+    DISPLAY_MODE_COUNT // Represents the total number of display modes
+};
 static DisplayMode currentDisplayMode = DISPLAY_POWER;
-const int MODE_SWITCH_BUTTON_PIN = BUTTON_B_PIN; // Use BUTTON_B_PIN from config.h
-static unsigned long lastButtonPressTime = 0;
-static bool buttonAlreadyProcessed = false; // Added for single action per press logic
-const unsigned long debounceDelay = 50; // milliseconds for button debounce
+
+// Button definitions for screen switching
+const int SCREEN_UP_BUTTON_PIN = BUTTON_B_PIN;   // Use BUTTON_B_PIN for Screen Up
+const int SCREEN_DOWN_BUTTON_PIN = BUTTON_C_PIN; // Use BUTTON_C_PIN for Screen Down
+
+static unsigned long lastScreenUpPressTime = 0;
+static bool screenUpButtonAlreadyProcessed = false;
+static unsigned long lastScreenDownPressTime = 0;
+static bool screenDownButtonAlreadyProcessed = false;
+
+const unsigned long debounceDelay = 10; // milliseconds for button debounce
 
 
 bool initializeDisplay(); // Already in .h but good practice for .cpp internal structure
 
-// static int j = 0; // Keep j static if it's used to alternate states or for initialization checks
-// No longer needed for the new display logic
+
 
 // --- Main Display Task ---
 void displayUpdateTask(void *pvParameters) {
@@ -70,37 +81,47 @@ void displayUpdateTask(void *pvParameters) {
     // --- Button Logic for Mode Switching ---
     if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
         if (g_debugSettings.otherDebugStreamOn) {
-            Serial.println(); // Add this line to ensure the message starts on a new line
-            Serial.printf("Button D2 (GPIO%d) State: %d\n", MODE_SWITCH_BUTTON_PIN, digitalRead(MODE_SWITCH_BUTTON_PIN));
+            Serial.println(); 
+            Serial.printf("Button UP (GPIO%d) State: %d, Button DOWN (GPIO%d) State: %d\n", 
+                          SCREEN_UP_BUTTON_PIN, digitalRead(SCREEN_UP_BUTTON_PIN),
+                          SCREEN_DOWN_BUTTON_PIN, digitalRead(SCREEN_DOWN_BUTTON_PIN));
         }
         xSemaphoreGive(g_debugSettingsMutex);
     }
 
-    bool currentButtonStateIsHigh = (digitalRead(MODE_SWITCH_BUTTON_PIN) == HIGH);
+    bool currentScreenUpButtonStateIsHigh = (digitalRead(SCREEN_UP_BUTTON_PIN) == HIGH);
+    bool currentScreenDownButtonStateIsHigh = (digitalRead(SCREEN_DOWN_BUTTON_PIN) == HIGH);
 
-    if (currentButtonStateIsHigh) {
-        if (!buttonAlreadyProcessed) { // Only process if this is a "new" press
-            if (millis() - lastButtonPressTime > debounceDelay) {
-                currentDisplayMode = (currentDisplayMode == DISPLAY_POWER) ? DISPLAY_GPS : DISPLAY_POWER;
-                lastButtonPressTime = millis(); // Update time of this processed action
-                Serial.print("Display Mode Switched to: ");
-                Serial.println(currentDisplayMode == DISPLAY_POWER ? "POWER" : "GPS");
-                canvas.fillScreen(ST77XX_BLACK);
-                buttonAlreadyProcessed = true; // Mark as processed for this press
+    // Screen UP Button Logic
+    if (currentScreenUpButtonStateIsHigh) {
+        if (!screenUpButtonAlreadyProcessed) { 
+            if (millis() - lastScreenUpPressTime > debounceDelay) {
+                currentDisplayMode = (DisplayMode)(((int)currentDisplayMode + 1) % DISPLAY_MODE_COUNT);
+                lastScreenUpPressTime = millis(); 
+                Serial.print("Screen UP pressed. Display Mode Switched to: ");
+                Serial.println(currentDisplayMode == DISPLAY_POWER ? "POWER" : (currentDisplayMode == DISPLAY_GPS ? "GPS" : "OTHER")); // Extend as modes grow
+                screenUpButtonAlreadyProcessed = true; 
             }
         }
     } else {
-        // Button is not pressed (LOW with INPUT_PULLDOWN setup)
-        // Reset the processed flag, ready for the next distinct press.
-        // Also, reset lastButtonPressTime to make the next press responsive after release.
-        if (buttonAlreadyProcessed) {
-             // Consider this reset carefully. Resetting to 0 might make it too sensitive
-             // if there's bounce on release. A safer reset might be:
-             // lastButtonPressTime = millis() - debounceDelay; // Ensure next press isn't blocked by this release
-             // For now, let's stick to the simpler model as per plan, can refine if needed.
-        }
-        buttonAlreadyProcessed = false;
+        screenUpButtonAlreadyProcessed = false;
     }
+
+    // Screen DOWN Button Logic
+    if (currentScreenDownButtonStateIsHigh) {
+        if (!screenDownButtonAlreadyProcessed) {
+            if (millis() - lastScreenDownPressTime > debounceDelay) {
+                currentDisplayMode = (DisplayMode)(((int)currentDisplayMode + DISPLAY_MODE_COUNT - 1) % DISPLAY_MODE_COUNT);
+                lastScreenDownPressTime = millis();
+                Serial.print("Screen DOWN pressed. Display Mode Switched to: ");
+                Serial.println(currentDisplayMode == DISPLAY_POWER ? "POWER" : (currentDisplayMode == DISPLAY_GPS ? "GPS" : "OTHER")); // Extend as modes grow
+                screenDownButtonAlreadyProcessed = true;
+            }
+        }
+    } else {
+        screenDownButtonAlreadyProcessed = false;
+    }
+
 
     canvas.fillScreen(ST77XX_BLACK); // Clear canvas for current mode's content
     canvas.setFont(&FreeSans12pt7b);
@@ -251,9 +272,11 @@ bool initializeDisplay() {
   pinMode(TFT_BACKLITE, OUTPUT);
   digitalWrite(TFT_BACKLITE, HIGH); // Turn on backlight early
 
-  // Initialize Mode Switch Button
-  pinMode(MODE_SWITCH_BUTTON_PIN, INPUT_PULLDOWN);
-  Serial.println("Mode switch button D2 (GPIO" + String(MODE_SWITCH_BUTTON_PIN) + ") initialized.");
+  // Initialize Mode Switch Buttons
+  pinMode(SCREEN_UP_BUTTON_PIN, INPUT_PULLDOWN);
+  Serial.println("Screen UP button (GPIO" + String(SCREEN_UP_BUTTON_PIN) + ") initialized.");
+  pinMode(SCREEN_DOWN_BUTTON_PIN, INPUT_PULLDOWN);
+  Serial.println("Screen DOWN button (GPIO" + String(SCREEN_DOWN_BUTTON_PIN) + ") initialized.");
 
   TB.neopixelPin = PIN_NEOPIXEL;
   TB.neopixelNum = 1;
