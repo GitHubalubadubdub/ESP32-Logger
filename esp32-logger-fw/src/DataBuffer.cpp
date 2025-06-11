@@ -1,4 +1,5 @@
 #include "DataBuffer.h"
+#include "LogDataStructure.h" // Provides definition for LogRecordV1
 
 // Explicit template instantiation for LogRecordV1 if needed by the build system,
 // or keep implementation in header for templates. For simplicity with PlatformIO,
