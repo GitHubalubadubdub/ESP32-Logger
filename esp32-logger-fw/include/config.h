@@ -19,7 +19,7 @@
 #define SD_MOSI_PIN GPIO_NUM_35
 #define SD_MISO_PIN GPIO_NUM_37
 #define SD_SCK_PIN  GPIO_NUM_36
-#define SD_CS_PIN   GPIO_NUM_34
+#define SD_CS_PIN   GPIO_NUM_3 // Changed from GPIO_NUM_34
 
 // Buttons (ESP32-S3 Reverse TFT Feather)
 #define BUTTON_A_PIN GPIO_NUM_0  // BOOT/D0 button
