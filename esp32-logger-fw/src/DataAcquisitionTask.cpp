@@ -14,10 +14,10 @@
 // or use appropriate mutexes/semaphores for thread-safe access.
 
 // g_gpsData is expected to be defined in gps_data.h (or sourced through it)
-extern GpsData_t g_gpsData; // Ensure this matches the definition in gps_data.h
+extern GpsData g_gpsData; // Ensure this matches the definition in gps_data.h
 
 // is_recording is expected to be defined in shared_state.h
-extern bool is_recording;
+extern volatile bool is_recording;
 
 // Placeholder for BLE Power Metrics Data if not available from a specific header
 // If g_powerMetricsData is defined in shared_state.h or another included header, this can be removed.
@@ -51,9 +51,9 @@ void dataAcquisitionTask(void *pvParameters) {
             // Consider mutex locks if g_gpsData can be written by another task/ISR concurrently
             logRecord.latitude = g_gpsData.latitude;
             logRecord.longitude = g_gpsData.longitude;
-            logRecord.altitude_m = g_gpsData.altitude_m;
+            logRecord.altitude_m = 0.0f; // Placeholder, original field missing in GpsData
             logRecord.speed_mps = g_gpsData.speed_mps;
-            logRecord.heading_deg = g_gpsData.heading_deg;
+            logRecord.heading_deg = 0.0f; // Placeholder, original field missing in GpsData
             logRecord.satellites = g_gpsData.satellites;
             logRecord.fix_quality = g_gpsData.fix_quality;
 

@@ -24,7 +24,7 @@
 // --- Global Variable Definitions (declared extern in shared_state.h) ---
 volatile bool is_recording = false;
 volatile SdCardStatus_t g_sdCardStatus = SD_NOT_INITIALIZED; // Initial state
-DebugSettings g_debugSettings; // Definition for the global debug settings struct
+volatile DebugSettings g_debugSettings; // Definition for the global debug settings struct
 SemaphoreHandle_t g_debugSettingsMutex; // Definition for its mutex
 
 // --- TFT Display Object ---

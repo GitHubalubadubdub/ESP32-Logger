@@ -26,10 +26,7 @@
 #define BUTTON_B_PIN GPIO_NUM_1 // USER/D1 button
 #define BUTTON_C_PIN GPIO_NUM_2 // USER/D2 button
 
-// TFT Display (ESP32-S3 Reverse TFT Feather)
-#define TFT_CS   GPIO_NUM_6  // Chip Select
-#define TFT_DC   GPIO_NUM_7  // Data/Command
-#define TFT_RST  GPIO_NUM_10 // Reset
+// TFT Display pins are now expected to be defined by the board variant's pins_arduino.h
 // SPI for TFT: SCK=GPIO_NUM_12, MOSI=GPIO_NUM_11 (usually default SPI pins for the board)
 // Backlight (BLK/LITE) is often GPIO_NUM_38, but it's used by GPS_RX_PIN.
 // Assuming backlight is either always on or controlled by a different mechanism/default.
