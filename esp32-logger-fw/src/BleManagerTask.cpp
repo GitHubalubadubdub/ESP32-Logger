@@ -572,6 +572,7 @@ void bleManagerTask(void *pvParameters) {
     for (;;) {
         if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
             if (g_debugSettings.otherDebugStreamOn) {
+                Serial.println();
                 Serial.printf("BLE_TASK: Check scan: connected=%d, isScanning=%d, doConnect=%d\n", connected, pBLEScan->isScanning(), doConnect);
             }
             xSemaphoreGive(g_debugSettingsMutex);
@@ -626,6 +627,7 @@ void bleManagerTask(void *pvParameters) {
                     pBLEScan->clearResults();
                     if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                         if (g_debugSettings.otherDebugStreamOn) {
+                            Serial.println();
                             Serial.println("BLE_TASK: Not connected and not scanning. Starting BLE scan...");
                         }
                         xSemaphoreGive(g_debugSettingsMutex);
@@ -641,6 +643,7 @@ void bleManagerTask(void *pvParameters) {
                     if (pBLEScan->start(5, nullptr, false) == 0) {
                          if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                              if (g_debugSettings.otherDebugStreamOn) {
+                                Serial.println();
                                 Serial.println("BLE_TASK: Scan started successfully.");
                              }
                              xSemaphoreGive(g_debugSettingsMutex);
@@ -648,6 +651,7 @@ void bleManagerTask(void *pvParameters) {
                     } else {
                          if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                             if (g_debugSettings.otherDebugStreamOn) {
+                                Serial.println();
                                 Serial.println("BLE_TASK: Failed to start scan (already running or other error).");
                             }
                             xSemaphoreGive(g_debugSettingsMutex);
