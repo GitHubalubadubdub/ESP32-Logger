@@ -4,7 +4,9 @@
 #include "freertos/queue.h"
 #include "LogDataStructure.h" // Created in src, assuming compiler path includes src
 #include "gps_data.h"         // For g_gpsData
-#include "shared_state.h"     // For is_recording and potentially g_powerMetricsData or its components
+#include "shared_state.h"     // For is_recording
+#include "ble_data_types.h"   // For BlePowerMetricsData_t
+
 // Assuming g_powerMetricsData might be part of shared_state.h or another specific BLE header.
 // If BleData.h is a specific file, it should be included here.
 // For now, we'll use the placeholder structure from the example if not found in shared_state.h
@@ -19,14 +21,10 @@ extern GpsData g_gpsData; // Ensure this matches the definition in gps_data.h
 // is_recording is expected to be defined in shared_state.h
 extern volatile bool is_recording;
 
-// Placeholder for BLE Power Metrics Data if not available from a specific header
-// If g_powerMetricsData is defined in shared_state.h or another included header, this can be removed.
-typedef struct {
-    float power_w = 0.0f;
-    uint16_t cadence_rpm = 0;
-    float left_right_balance = 0.5f;
-} BlePowerMetricsData_t;
-extern BlePowerMetricsData_t g_powerMetricsData; // Assuming this will be defined elsewhere globally
+// TODO: This definition of g_powerMetricsData is a temporary measure to resolve linking.
+// It should ideally be defined in the .cpp file responsible for managing BLE data
+// (e.g., BleManagerTask.cpp or similar) and declared extern here.
+BlePowerMetricsData_t g_powerMetricsData = {0.0f, 0, 0.0f}; // Initialize to default values
 // --- End Placeholder ---
 
 
