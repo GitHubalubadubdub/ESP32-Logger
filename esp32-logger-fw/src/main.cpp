@@ -82,13 +82,13 @@ void setup() {
     tft.setRotation(1); // Landscape
     Serial.println("After tft.setRotation(1)");
 
-    #ifdef TFT_BACKLIGHT // Check if TFT_BACKLIGHT is defined (likely by pins_arduino.h)
-        Serial.println("Attempting to enable TFT backlight using TFT_BACKLIGHT pin...");
-        pinMode(TFT_BACKLIGHT, OUTPUT);
-        digitalWrite(TFT_BACKLIGHT, HIGH);
-        Serial.print("TFT_BACKLIGHT pin ("); Serial.print(TFT_BACKLIGHT); Serial.println(") set to HIGH.");
+    #ifdef TFT_BL // Check if TFT_BL is defined (another common backlight macro)
+        Serial.println("Attempting to enable TFT backlight using TFT_BL pin...");
+        pinMode(TFT_BL, OUTPUT);
+        digitalWrite(TFT_BL, HIGH);
+        Serial.print("TFT_BL pin ("); Serial.print(TFT_BL); Serial.println(") set to HIGH.");
     #else
-        Serial.println("TFT_BACKLIGHT macro not defined by board variant. Assuming backlight is automatic or on a fixed pin if separate.");
+        Serial.println("TFT_BL macro not defined by board variant. Backlight assumption continues.");
     #endif
 
     Serial.println("Before tft.fillScreen(ST77XX_BLACK)");
