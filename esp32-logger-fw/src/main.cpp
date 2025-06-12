@@ -207,11 +207,11 @@ void setup() {
         last_timestamp = millis();
     }
 
-    // Display Update Task: Changed priority from 2 to 4
-    if (xTaskCreatePinnedToCore(displayUpdateTask, "DisplayTask", 8192, NULL, 4, NULL, 0) != pdPASS) { // Priority 4, increased stack
+    // Display Update Task: Changed priority from 2 to 4, and Core from 0 to 1
+    if (xTaskCreatePinnedToCore(displayUpdateTask, "DisplayTask", 8192, NULL, 4, NULL, 1) != pdPASS) { // Priority 4, Core 1, increased stack
         Serial.println("ERROR: Failed to create Display Update Task!");
     } else {
-        Serial.println("Display Update Task created (Core 0, Prio 4, Stack 8192)."); // Log reflects Prio 4
+        Serial.println("Display Update Task created (Core 1, Prio 4, Stack 8192)."); // Log reflects Prio 4 and Core 1
         Serial.print("Time after DisplayTask creation: "); Serial.print(millis() - last_timestamp); Serial.println("ms");
         last_timestamp = millis();
     }
