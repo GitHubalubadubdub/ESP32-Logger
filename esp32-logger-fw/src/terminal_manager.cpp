@@ -39,7 +39,7 @@ void process_command(char *command_line) {
     if (strcmp(command, "gps_debug") == 0) {
         if (argument != NULL) {
             // Existing logic for gps_debug
-            if (xSemaphoreTake(g_debugSettingsMutex, portMAX_DELAY) == pdTRUE) {
+            // if (xSemaphoreTake(g_debugSettingsMutex, portMAX_DELAY) == pdTRUE) {
                 if (strcmp(argument, "on") == 0) {
                     g_debugSettings.gpsDebugStreamOn = true;
                     Serial.println("GPS debug stream enabled.");
@@ -49,15 +49,15 @@ void process_command(char *command_line) {
                 } else {
                     Serial.println("Invalid argument for gps_debug. Use 'on' or 'off'.");
                 }
-                xSemaphoreGive(g_debugSettingsMutex);
-            }
+            //     xSemaphoreGive(g_debugSettingsMutex);
+            // }
         } else {
             Serial.println("Missing argument for gps_debug. Use 'on' or 'off'.");
         }
     } else if (strcmp(command, "ble_debug") == 0) {
         if (argument != NULL) {
             // Existing logic for ble_debug
-            if (xSemaphoreTake(g_debugSettingsMutex, portMAX_DELAY) == pdTRUE) {
+            // if (xSemaphoreTake(g_debugSettingsMutex, portMAX_DELAY) == pdTRUE) {
                 if (strcmp(argument, "on") == 0) {
                     g_debugSettings.bleDebugStreamOn = true;
                     Serial.println("BLE debug stream enabled.");
@@ -67,15 +67,15 @@ void process_command(char *command_line) {
                 } else {
                     Serial.println("Invalid argument for ble_debug. Use 'on' or 'off'.");
                 }
-                xSemaphoreGive(g_debugSettingsMutex);
-            }
+            //     xSemaphoreGive(g_debugSettingsMutex);
+            // }
         } else {
             Serial.println("Missing argument for ble_debug. Use 'on' or 'off'.");
         }
     } else if (strcmp(command, "other_debug") == 0) {
         if (argument != NULL) {
             // Existing logic for other_debug
-            if (xSemaphoreTake(g_debugSettingsMutex, portMAX_DELAY) == pdTRUE) {
+            // if (xSemaphoreTake(g_debugSettingsMutex, portMAX_DELAY) == pdTRUE) {
                 if (strcmp(argument, "on") == 0) {
                     g_debugSettings.otherDebugStreamOn = true;
                     Serial.println("Other generic debug streams enabled.");
@@ -85,15 +85,15 @@ void process_command(char *command_line) {
                 } else {
                     Serial.println("Invalid argument for other_debug. Use 'on' or 'off'.");
                 }
-                xSemaphoreGive(g_debugSettingsMutex);
-            }
+            //     xSemaphoreGive(g_debugSettingsMutex);
+            // }
         } else {
             Serial.println("Missing argument for other_debug. Use 'on' or 'off'.");
         }
     } else if (strcmp(command, "ble_stream") == 0) {
         if (argument != NULL) {
             // Existing logic for ble_stream
-            if (xSemaphoreTake(g_debugSettingsMutex, portMAX_DELAY) == pdTRUE) {
+            // if (xSemaphoreTake(g_debugSettingsMutex, portMAX_DELAY) == pdTRUE) {
                 if (strcmp(argument, "on") == 0) {
                     g_debugSettings.bleActivityStreamOn = true;
                     Serial.println("BLE activity stream enabled.");
@@ -103,8 +103,8 @@ void process_command(char *command_line) {
                 } else {
                     Serial.println("Invalid argument for ble_stream. Use 'on' or 'off'.");
                 }
-                xSemaphoreGive(g_debugSettingsMutex);
-            }
+            //     xSemaphoreGive(g_debugSettingsMutex);
+            // }
         } else {
             Serial.println("Missing argument for ble_stream. Use 'on' or 'off'.");
         }

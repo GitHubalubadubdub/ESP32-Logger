@@ -69,15 +69,15 @@ void setup() {
     Serial.println("--- ESP32 Logger Starting Up ---");
 
     // Initialize global debug settings mutex
-    Serial.println("Before xSemaphoreCreateMutex for g_debugSettingsMutex.");
-    g_debugSettingsMutex = xSemaphoreCreateMutex();
-    Serial.println("After xSemaphoreCreateMutex for g_debugSettingsMutex.");
-    if (g_debugSettingsMutex == NULL) {
-        Serial.println("CRITICAL ERROR: Failed to create debug settings mutex!");
-        // Handle error: perhaps loop indefinitely or restart
-    }
-    Serial.print("Time after Mutex creation: "); Serial.print(millis() - last_timestamp); Serial.println("ms");
-    last_timestamp = millis();
+    // Serial.println("Before xSemaphoreCreateMutex for g_debugSettingsMutex.");
+    // g_debugSettingsMutex = xSemaphoreCreateMutex();
+    // Serial.println("After xSemaphoreCreateMutex for g_debugSettingsMutex.");
+    // if (g_debugSettingsMutex == NULL) {
+    //     Serial.println("CRITICAL ERROR: Failed to create debug settings mutex!");
+    //     // Handle error: perhaps loop indefinitely or restart
+    // }
+    Serial.print("Time after (Commented Out) Mutex creation: "); Serial.print(millis() - last_timestamp); Serial.println("ms");
+    last_timestamp = millis(); // Ensure last_timestamp is updated for next measurement
 
     // Initialize Display
     Serial.println("--- TFT Initialization Diagnostics ---");

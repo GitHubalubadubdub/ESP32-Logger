@@ -50,7 +50,7 @@ void displayUpdateTask(void *pvParameters) {
 
     while (1) {
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
-        // Serial.println("DisplayUpdateTask: Loop entry.");
+        Serial.println("DisplayUpdateTask: Loop entry - Attempting cyan fill."); // Ensure this line is active
         // Serial.print("DisplayUpdateTask: Stack HWM before fillScreen: ");
         // Serial.println(uxTaskGetStackHighWaterMark(NULL));
 

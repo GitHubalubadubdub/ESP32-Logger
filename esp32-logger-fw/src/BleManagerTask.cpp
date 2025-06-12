@@ -22,12 +22,12 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
     static bool firstCrankDataPacketProcessed = false;
 
     if (length < 2) { // Minimum length for Flags
-        if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+        // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
             if (g_debugSettings.bleDebugStreamOn) {
                 Serial.println("BLE Notify: Data length too short for flags.");
             }
-            xSemaphoreGive(g_debugSettingsMutex);
-        }
+        //     xSemaphoreGive(g_debugSettingsMutex);
+        // }
         return;
     }
 
@@ -46,12 +46,12 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
         int16_t rawPower = (int16_t)((pData[3] << 8) | pData[2]);
         finalPower = (rawPower < 0) ? 0 : (uint16_t)rawPower;
     } else {
-        if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+        // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
             if (g_debugSettings.bleDebugStreamOn) {
                 Serial.println("BLE Notify: Data length too short for power measurement.");
             }
-            xSemaphoreGive(g_debugSettingsMutex);
-        }
+        //     xSemaphoreGive(g_debugSettingsMutex);
+        // }
     }
 
     // --- Parse Pedal Power Balance ---
@@ -65,12 +65,12 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
             finalBalanceAvailable = true;
             currentOffset += 1;
         } else {
-            if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+            // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                 if (g_debugSettings.bleDebugStreamOn) {
                     Serial.println("BLE Notify: Pedal Balance flag set, but data length insufficient.");
                 }
-                xSemaphoreGive(g_debugSettingsMutex);
-            }
+            //     xSemaphoreGive(g_debugSettingsMutex);
+            // }
             finalBalanceAvailable = false;
         }
     }
@@ -115,22 +115,22 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
             prevCrankEventTime = currentCrankEventTime;
             currentOffset += 4; // Advance offset after cadence data
         } else {
-            if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+            // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                 if (g_debugSettings.bleDebugStreamOn) {
                     Serial.println("BLE Notify: Crank data flag set, but data length insufficient for crank fields.");
                 }
-                xSemaphoreGive(g_debugSettingsMutex);
-            }
+            //     xSemaphoreGive(g_debugSettingsMutex);
+            // }
             firstCrankDataPacketProcessed = false;
             finalCadence = 0;
         }
     } else {
-        if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+        // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
             if (g_debugSettings.bleDebugStreamOn) {
                 // Serial.println("BLE Notify: Crank Revolution Data not present in flags."); // Can be noisy
             }
-            xSemaphoreGive(g_debugSettingsMutex);
-        }
+        //     xSemaphoreGive(g_debugSettingsMutex);
+        // }
         firstCrankDataPacketProcessed = false;
         finalCadence = 0;
     }
@@ -147,12 +147,12 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
                 currentOffset += 2;
                 // Serial.printf("Parsed TDS Angle: %u\n", finalTopDeadSpotAngle); // Keep commented or wrap if enabled
             } else {
-                if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                     if (g_debugSettings.bleDebugStreamOn) {
                         Serial.println("BLE Notify: TDS Angle flag set, but data length insufficient.");
                     }
-                    xSemaphoreGive(g_debugSettingsMutex);
-                }
+                //     xSemaphoreGive(g_debugSettingsMutex);
+                // }
             }
         }
         if (flags & (1 << 10)) { // Bottom Dead Spot Angle Present
@@ -162,22 +162,22 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
                 currentOffset += 2;
                 // Serial.printf("Parsed BDS Angle: %u\n", finalBottomDeadSpotAngle); // Keep commented or wrap if enabled
             } else {
-                if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                     if (g_debugSettings.bleDebugStreamOn) {
                         Serial.println("BLE Notify: BDS Angle flag set, but data length insufficient.");
                     }
-                    xSemaphoreGive(g_debugSettingsMutex);
-                }
+                //     xSemaphoreGive(g_debugSettingsMutex);
+                // }
             }
         }
     } else {
-        if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+        // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
             if (g_debugSettings.bleDebugStreamOn) {
                 // if (!s_deadSpotAnglesSupported) { /* Serial.println("TDS/BDS angles feature not supported by device."); */ }
                 // if (!extremeAnglesFlagPresent && s_deadSpotAnglesSupported) { /* Serial.println("Extreme Angles flag not present in this packet."); */ }
             }
-            xSemaphoreGive(g_debugSettingsMutex);
-        }
+        //     xSemaphoreGive(g_debugSettingsMutex);
+        // }
     }
 
     // --- Update Shared Data ---
@@ -204,14 +204,14 @@ void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* 
         */
         // This ^^^ Serial.printf is a good candidate for wrapping if it were active.
         // Example for the above commented out printf:
-        // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
-        //     if (g_debugSettings.bleDebugStreamOn) {
-        //         Serial.printf("Processed Data -> P: %u, C: %u, LBal: %.1f%%(%s), TDS: %u(%s), BDS: %u(%s)\n",
-        //                       finalPower, finalCadence,
-        //                       finalLeftPedalBalance, finalBalanceAvailable ? "Y" : "N",
-        //                       finalTopDeadSpotAngle, finalTopDeadSpotAvailable ? "Y" : "N",
-        //                       finalBottomDeadSpotAngle, finalBottomDeadSpotAvailable ? "Y" : "N");
-        //     }
+        // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) { // Example for wrapping a Serial.printf
+            if (g_debugSettings.bleDebugStreamOn) { // This if would be inside the mutex block
+                // Serial.printf("Processed Data -> P: %u, C: %u, LBal: %.1f%%(%s), TDS: %u(%s), BDS: %u(%s)\n",
+                //               finalPower, finalCadence,
+                //               finalLeftPedalBalance, finalBalanceAvailable ? "Y" : "N",
+                //               finalTopDeadSpotAngle, finalTopDeadSpotAvailable ? "Y" : "N",
+                //               finalBottomDeadSpotAngle, finalBottomDeadSpotAvailable ? "Y" : "N");
+            }
         //     xSemaphoreGive(g_debugSettingsMutex);
         // }
     } else {
@@ -266,7 +266,7 @@ class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
         // Serial.print("BLE Advertised Device found: ");
         // This entire block is for verbose advertised device logging.
-        if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+        // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
             if (g_debugSettings.bleActivityStreamOn) {
                 // Serial.print("BLE Advertised Device found: ");
                 // Serial.print(advertisedDevice->getName().c_str());
@@ -275,44 +275,44 @@ class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                 // Serial.print(" RSSI: ");
                 // Serial.println(advertisedDevice->getRSSI());
             }
-            xSemaphoreGive(g_debugSettingsMutex);
-        }
+        //     xSemaphoreGive(g_debugSettingsMutex);
+        // }
 
         if (advertisedDevice->isAdvertisingService(NimBLEUUID(CYCLING_POWER_SERVICE_UUID))) {
-            if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+            // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                 if (g_debugSettings.bleActivityStreamOn) {
                      Serial.println("Found Cycling Power Service in advertisement!");
                 }
-                xSemaphoreGive(g_debugSettingsMutex);
-            }
+            //     xSemaphoreGive(g_debugSettingsMutex);
+            // }
             // Check if we are already trying to connect or are connected to this device
             if (myDevice != nullptr && myDevice->getAddress().equals(advertisedDevice->getAddress()) && (doConnect || connected)) {
                 // This message can be frequent if a device is repeatedly scanned while connecting/connected.
-                if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                     if (g_debugSettings.bleDebugStreamOn) {
                         Serial.println("BLE Scan: Already processing this device.");
                     }
-                    xSemaphoreGive(g_debugSettingsMutex);
-                }
+                //     xSemaphoreGive(g_debugSettingsMutex);
+                // }
                 return;
             }
 
             NimBLEDevice::getScan()->stop();
-            if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+            // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                 if (g_debugSettings.bleActivityStreamOn) {
                     Serial.println("Scan stopped by found device."); // Clarified message
                 }
-                xSemaphoreGive(g_debugSettingsMutex);
-            }
+            //     xSemaphoreGive(g_debugSettingsMutex);
+            // }
             // myDevice = new NimBLEAdvertisedDevice(*advertisedDevice); // Make a copy for long term storage
             myDevice = advertisedDevice;
             doConnect = true;
-            if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+            // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                 if (g_debugSettings.bleActivityStreamOn) {
                     Serial.println("Device stored, doConnect set to true.");
                 }
-                xSemaphoreGive(g_debugSettingsMutex);
-            }
+            //     xSemaphoreGive(g_debugSettingsMutex);
+            // }
 
             if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 g_powerCadenceData.bleState = BLE_CONNECTING;
@@ -349,12 +349,12 @@ bool connectToServer() {
         Serial.println("BLE Client created."); // One-time status
     } else {
         if (pClient->isConnected() && pClient->getPeerAddress().equals(myDevice->getAddress())) {
-            if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+            // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                 if (g_debugSettings.bleActivityStreamOn) {
                     Serial.println("Already connected to this device.");
                 }
-                xSemaphoreGive(g_debugSettingsMutex);
-            }
+            //     xSemaphoreGive(g_debugSettingsMutex);
+            // }
             return true; // Already connected
         }
         // If client exists but is for a different device or disconnected, it should be cleaned up.
@@ -362,35 +362,35 @@ bool connectToServer() {
         // Or if connection fails, it's deleted.
     }
 
-    if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+    // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
         if (g_debugSettings.bleActivityStreamOn) {
             Serial.print("Attempting to connect to device: ");
             Serial.println(myDevice->getAddress().toString().c_str());
         }
-        xSemaphoreGive(g_debugSettingsMutex);
-    }
+    //     xSemaphoreGive(g_debugSettingsMutex);
+    // }
 
     // Set connection parameters
     // pClient->setConnectionParams(12,12,0,51); // Example: interval 15ms, latency 0, timeout 510ms
                                              // May need adjustment for specific power meters
 
     if (!pClient->connect(myDevice)) {
-        if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+        // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
             if (g_debugSettings.bleActivityStreamOn) {
                 Serial.println("Failed to connect to device.");
             }
-            xSemaphoreGive(g_debugSettingsMutex);
-        }
+        //     xSemaphoreGive(g_debugSettingsMutex);
+        // }
         NimBLEDevice::deleteClient(pClient); // Delete client if connection failed
         pClient = nullptr;
         return false;
     }
-    if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+    // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
         if (g_debugSettings.bleActivityStreamOn) {
             Serial.println("Successfully connected to device.");
         }
-        xSemaphoreGive(g_debugSettingsMutex);
-    }
+    //     xSemaphoreGive(g_debugSettingsMutex);
+    // }
 
     BLERemoteService* pSvc = nullptr;
     s_deadSpotAnglesSupported = false; // Reset before checking features of newly connected device
@@ -402,12 +402,12 @@ bool connectToServer() {
     }
 
     if (pSvc) { // Successfully got Cycling Power Service
-        if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+        // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
             if (g_debugSettings.bleActivityStreamOn) {
                 Serial.println("Found Cycling Power Service");
             }
-            xSemaphoreGive(g_debugSettingsMutex);
-        }
+        //     xSemaphoreGive(g_debugSettingsMutex);
+        // }
 
         // Attempt to read Cycling Power Feature characteristic (0x2A65)
         BLERemoteCharacteristic* pFeatureChar = nullptr;
@@ -427,29 +427,29 @@ bool connectToServer() {
                 featuresBitmask |= (uint32_t)featuresValue[1] << 8;
                 featuresBitmask |= (uint32_t)featuresValue[2] << 16;
                 featuresBitmask |= (uint32_t)featuresValue[3] << 24;
-                if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                     if (g_debugSettings.bleActivityStreamOn) {
                         Serial.printf("Cycling Power Features Bitmask: 0x%08X\n", featuresBitmask);
                     }
-                    xSemaphoreGive(g_debugSettingsMutex);
-                }
+                //     xSemaphoreGive(g_debugSettingsMutex);
+                // }
                 // Check Bit 6 for "Top and Bottom Dead Spot Angles Supported"
                 if (featuresBitmask & (1 << 6)) {
                     s_deadSpotAnglesSupported = true;
-                    if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                    // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                         if (g_debugSettings.bleActivityStreamOn) {
                             Serial.println("Feature: Top/Bottom Dead Spot Angles SUPPORTED.");
                         }
-                        xSemaphoreGive(g_debugSettingsMutex);
-                    }
+                    //     xSemaphoreGive(g_debugSettingsMutex);
+                    // }
                 } else {
                     s_deadSpotAnglesSupported = false;
-                    if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                    // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                         if (g_debugSettings.bleActivityStreamOn) {
                             Serial.println("Feature: Top/Bottom Dead Spot Angles NOT supported.");
                         }
-                        xSemaphoreGive(g_debugSettingsMutex);
-                    }
+                    //     xSemaphoreGive(g_debugSettingsMutex);
+                    // }
                 }
                 // Update shared struct, useful for display task to know support without waiting for data
                 if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -458,78 +458,78 @@ bool connectToServer() {
                 }
 
             } else {
-                if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                     if (g_debugSettings.bleActivityStreamOn) {
                         Serial.println("Failed to read valid Cycling Power Features or length too short.");
                     }
-                    xSemaphoreGive(g_debugSettingsMutex);
-                }
+                //     xSemaphoreGive(g_debugSettingsMutex);
+                // }
                 s_deadSpotAnglesSupported = false; // Default if not readable
             }
         } else {
-            if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+            // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                 if (g_debugSettings.bleActivityStreamOn) {
                     Serial.println("Cycling Power Feature characteristic (0x2A65) not found or not readable.");
                 }
-                xSemaphoreGive(g_debugSettingsMutex);
-            }
+            //     xSemaphoreGive(g_debugSettingsMutex);
+            // }
             s_deadSpotAnglesSupported = false; // Default if not found
         }
 
         // Now get the measurement characteristic
         pCyclingPowerMeasurementChar = pSvc->getCharacteristic(CYCLING_POWER_MEASUREMENT_UUID);
         if (!pCyclingPowerMeasurementChar) {
-            if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+            // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                 if (g_debugSettings.bleActivityStreamOn) {
                     Serial.println("Failed to find Cycling Power Measurement Characteristic.");
                 }
-                xSemaphoreGive(g_debugSettingsMutex);
-            }
+            //     xSemaphoreGive(g_debugSettingsMutex);
+            // }
             pClient->disconnect();
             return false;
         }
-        if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+        // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
             if (g_debugSettings.bleActivityStreamOn) {
                 Serial.println("Found Cycling Power Measurement Characteristic.");
             }
-            xSemaphoreGive(g_debugSettingsMutex);
-        }
+        //     xSemaphoreGive(g_debugSettingsMutex);
+        // }
 
     } else { // if (!pSvc)
-        if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+        // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
             if (g_debugSettings.bleActivityStreamOn) {
                 Serial.println("Failed to find Cycling Power Service on connected device.");
             }
-            xSemaphoreGive(g_debugSettingsMutex);
-        }
+        //     xSemaphoreGive(g_debugSettingsMutex);
+        // }
         pClient->disconnect();
         return false;
     }
 
     if (pCyclingPowerMeasurementChar->canNotify()) {
         if (!pCyclingPowerMeasurementChar->subscribe(true, notifyCallback, false)) {
-            if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+            // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                 if (g_debugSettings.bleActivityStreamOn) {
                     Serial.println("Failed to subscribe to characteristic notifications.");
                 }
-                xSemaphoreGive(g_debugSettingsMutex);
-            }
+            //     xSemaphoreGive(g_debugSettingsMutex);
+            // }
             pClient->disconnect();
             return false;
         }
-        if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+        // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
             if (g_debugSettings.bleActivityStreamOn) {
                 Serial.println("Successfully subscribed to characteristic notifications.");
             }
-            xSemaphoreGive(g_debugSettingsMutex);
-        }
+        //     xSemaphoreGive(g_debugSettingsMutex);
+        // }
     } else {
-        if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+        // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
             if (g_debugSettings.bleActivityStreamOn) {
                 Serial.println("Characteristic does not support notifications.");
             }
-            xSemaphoreGive(g_debugSettingsMutex);
-        }
+        //     xSemaphoreGive(g_debugSettingsMutex);
+        // }
         pClient->disconnect(); // Cannot proceed if we can't get data
         return false;
     }
@@ -570,36 +570,36 @@ void bleManagerTask(void *pvParameters) {
     Serial.println("BLE Scanner configured. Starting main loop."); // One-time status
 
     for (;;) {
-        if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+        // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
             if (g_debugSettings.otherDebugStreamOn) {
                 Serial.println();
                 Serial.printf("BLE_TASK: Check scan: connected=%d, isScanning=%d, doConnect=%d\n", connected, pBLEScan->isScanning(), doConnect);
             }
-            xSemaphoreGive(g_debugSettingsMutex);
-        }
+        //     xSemaphoreGive(g_debugSettingsMutex);
+        // }
         if (doConnect && myDevice != nullptr && !connected) {
-            if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+            // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                 if (g_debugSettings.bleActivityStreamOn) {
                     Serial.println("doConnect is true, myDevice is set, and not connected. Attempting connection...");
                 }
-                xSemaphoreGive(g_debugSettingsMutex);
-            }
+            //     xSemaphoreGive(g_debugSettingsMutex);
+            // }
             if (connectToServer()) {
-                if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                     if (g_debugSettings.bleActivityStreamOn) {
                         Serial.println("Connection successful. Monitoring connection.");
                     }
-                    xSemaphoreGive(g_debugSettingsMutex);
-                }
+                //     xSemaphoreGive(g_debugSettingsMutex);
+                // }
                 // Loop while connected, actual data comes via notifyCallback
                 // The 'connected' flag is managed by ClientCallbacks
             } else {
-                if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                     if (g_debugSettings.bleActivityStreamOn) {
                         Serial.println("Connection attempt failed. Resetting flags.");
                     }
-                    xSemaphoreGive(g_debugSettingsMutex);
-                }
+                //     xSemaphoreGive(g_debugSettingsMutex);
+                // }
                 if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                     g_powerCadenceData.bleState = BLE_DISCONNECTED;
                     g_powerCadenceData.newData = true;
@@ -625,13 +625,13 @@ void bleManagerTask(void *pvParameters) {
 
                 if (!doConnect) {
                     pBLEScan->clearResults();
-                    if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                    // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                         if (g_debugSettings.otherDebugStreamOn) {
                             Serial.println();
                             Serial.println("BLE_TASK: Not connected and not scanning. Starting BLE scan...");
                         }
-                        xSemaphoreGive(g_debugSettingsMutex);
-                    }
+                    //     xSemaphoreGive(g_debugSettingsMutex);
+                    // }
 
                     if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                         g_powerCadenceData.bleState = BLE_SCANNING;
@@ -641,21 +641,21 @@ void bleManagerTask(void *pvParameters) {
                     }
 
                     if (pBLEScan->start(5, nullptr, false) == 0) {
-                         if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                        //  if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                              if (g_debugSettings.otherDebugStreamOn) {
                                 Serial.println();
                                 Serial.println("BLE_TASK: Scan started successfully.");
                              }
-                             xSemaphoreGive(g_debugSettingsMutex);
-                         }
+                        //      xSemaphoreGive(g_debugSettingsMutex);
+                        //  }
                     } else {
-                         if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                        //  if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                             if (g_debugSettings.otherDebugStreamOn) {
                                 Serial.println();
                                 Serial.println("BLE_TASK: Failed to start scan (already running or other error).");
                             }
-                            xSemaphoreGive(g_debugSettingsMutex);
-                         }
+                        //     xSemaphoreGive(g_debugSettingsMutex);
+                        //  }
                          if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                             g_powerCadenceData.bleState = BLE_IDLE;
                             g_powerCadenceData.newData = true;
@@ -667,20 +667,20 @@ void bleManagerTask(void *pvParameters) {
                 // as the connection attempt will be handled by the 'if (doConnect && ...)' block at the loop start.
             } else { // This else pairs with 'if (!pBLEScan->isScanning())' => means pBLEScan->isScanning() is true
                 // Not connected, but currently scanning
-                if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+                // if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                     if (g_debugSettings.bleActivityStreamOn) {
                         // Serial.println("BLE_TASK: Scan in progress..."); // Example log
                     }
-                    xSemaphoreGive(g_debugSettingsMutex);
-                }
+                //     xSemaphoreGive(g_debugSettingsMutex);
+                // }
             }
         } else { // This else pairs with 'else if (!connected)' => means connected is true
-             if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
+            //  if (xSemaphoreTake(g_debugSettingsMutex, (TickType_t)10) == pdTRUE) {
                 if (g_debugSettings.bleActivityStreamOn) { // Changed to bleActivityStreamOn
                     // Serial.println("BLE MainLoop: Connected. Waiting for notifications or disconnect.");
                 }
-                xSemaphoreGive(g_debugSettingsMutex);
-             }
+            //     xSemaphoreGive(g_debugSettingsMutex);
+            //  }
              if (xSemaphoreTake(g_dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
                 if (g_powerCadenceData.bleState != BLE_CONNECTED) { // Update if state was changed elsewhere
                     g_powerCadenceData.bleState = BLE_CONNECTED;
