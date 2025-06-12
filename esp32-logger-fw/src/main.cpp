@@ -2,10 +2,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
-// SPI.h is included by Adafruit_ST7789.h if needed, or by SdFat.h
+#include <SPI.h> // Ensure SPI.h is included for SPIClass
 
 // Project-specific headers
-#include "config.h"           // For BUTTON_A_PIN, TFT_CS, TFT_DC, TFT_RST etc.
+#include "config.h"           // For BUTTON_A_PIN etc. (TFT pins from pins_arduino.h)
 #include "shared_state.h"     // For is_recording, g_sdCardStatus, SdCardStatus_t
 #include "LogDataStructure.h" // For LogRecordV1 struct (used for queue size)
 
@@ -27,10 +27,14 @@ volatile SdCardStatus_t g_sdCardStatus = SD_NOT_INITIALIZED; // Initial state
 volatile DebugSettings g_debugSettings; // Definition for the global debug settings struct
 SemaphoreHandle_t g_debugSettingsMutex; // Definition for its mutex
 
+// --- Dedicated SPI for TFT ---
+SPIClass spiTFT(HSPI); // Use HSPI for the TFT
+
 // --- TFT Display Object ---
 // TFT_CS, TFT_DC, TFT_RST are expected to be defined in the board variant's pins_arduino.h
 // For Adafruit ESP32-S3 Reverse TFT, these are typically 42, 40, 41.
-Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
+// Using constructor that accepts SPIClass*
+Adafruit_ST7789 tft = Adafruit_ST7789(&spiTFT, TFT_CS, TFT_DC, TFT_RST);
 
 // --- Queue Definition ---
 QueueHandle_t xLoggingQueue;
@@ -82,9 +86,11 @@ void setup() {
     // Initialize Display
     Serial.println("--- TFT Initialization Diagnostics ---");
 
-    // SPI.begin() for TFT was removed as it's likely handled by tft.init() or variant init.
-    // Or, if SD card uses the same HSPI bus and initializes it first, that might be sufficient.
-    // The tft object uses the global SPI instance.
+    Serial.println("Initializing dedicated SPI (spiTFT on HSPI) for TFT...");
+    // Using known HSPI pins for ESP32-S3: SCK=36, MISO=37, MOSI=35.
+    // CS for spiTFT.begin is -1 because TFT library handles its own CS pin.
+    spiTFT.begin(36, 37, 35, -1); // SCK=36, MISO=37, MOSI=35, CS=-1 (software CS)
+    Serial.println("Dedicated SPI for TFT initialized with direct GPIO numbers.");
 
     Serial.print("Expected TFT_CS Pin (from variant): "); Serial.println(TFT_CS);
     Serial.print("Expected TFT_DC Pin (from variant): "); Serial.println(TFT_DC);
