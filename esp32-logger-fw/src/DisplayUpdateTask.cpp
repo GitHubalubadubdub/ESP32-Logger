@@ -53,10 +53,13 @@ void displayUpdateTask(void *pvParameters) {
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
         Serial.println("DisplayUpdateTask: Loop entry."); // General loop entry
         if (g_hspiMutex != NULL && xSemaphoreTake(g_hspiMutex, pdMS_TO_TICKS(100)) == pdTRUE) { // Check if mutex is valid before taking
-            Serial.println("DisplayUpdateTask: HSPI Mutex taken. Attempting cyan fill.");
-            tft.fillScreen(ST77XX_CYAN);
+            Serial.println("DisplayUpdateTask: HSPI Mutex taken. Attempting drawPixel test.");
+            tft.drawPixel(0, 0, ST77XX_RED);
+            tft.drawPixel(10, 10, ST77XX_GREEN);
+            tft.drawPixel(20, 20, ST77XX_BLUE);
+            tft.drawPixel(tft.width() - 1, tft.height() - 1, ST77XX_WHITE); // Pixel at opposite corner
             xSemaphoreGive(g_hspiMutex);
-            Serial.println("DisplayUpdateTask: HSPI Mutex given. Cyan fill done.");
+            Serial.println("DisplayUpdateTask: HSPI Mutex given. drawPixel test done.");
         } else {
             Serial.println("DisplayUpdateTask: Timeout or invalid HSPI mutex! Skipping TFT update.");
             // Optionally, add a small delay here if mutex is frequently unavailable
