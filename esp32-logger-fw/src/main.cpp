@@ -113,6 +113,13 @@ void setup() {
     tft.setRotation(3); // Landscape (or portrait depending on display mounting)
     Serial.println("After tft.setRotation(3)");
 
+    Serial.println("Attempting to set TFT SPI speed...");
+    uint32_t tft_spi_speed = 10000000; // Try 10 MHz
+    // The tft object is Adafruit_ST7789 which inherits from Adafruit_SPITFT.
+    // Adafruit_SPITFT has a public setSPISpeed(uint32_t freq) method.
+    tft.setSPISpeed(tft_spi_speed);
+    Serial.print("TFT SPI speed set to: "); Serial.println(tft_spi_speed);
+
     Serial.println("Before tft.fillScreen(ST77XX_BLACK)");
     tft.fillScreen(ST77XX_BLACK);
     Serial.println("After tft.fillScreen(ST77XX_BLACK)");
