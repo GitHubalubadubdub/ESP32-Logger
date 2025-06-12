@@ -138,6 +138,29 @@ void sdLoggingTask(void *pvParameters) {
     sdInitialized = initializeSdCard();
     if (sdInitialized) {
         rtcInitialized = initializeRtc(); // Only try RTC if SD is there (or vice-versa depending on logic)
+
+        // Print SD card details if successfully initialized
+        Serial.println("--- SD Card Details ---");
+        // sectorCount returns uint32_t, ensure calculations promote to float for division
+        float cardSizeMB = (float)sd.card()->sectorCount() * 512.0f / (1024.0f * 1024.0f);
+        Serial.print("SD Card Size: "); Serial.print(cardSizeMB, 2); Serial.println(" MB");
+
+        Serial.print("Card type: ");
+        switch (sd.card()->type()) {
+            case SD_CARD_TYPE_SD1: Serial.println("SD1"); break;
+            case SD_CARD_TYPE_SD2: Serial.println("SD2"); break;
+            case SD_CARD_TYPE_SDHC: Serial.println("SDHC/SDXC"); break;
+            default: Serial.println("Unknown");
+        }
+
+        Serial.print("Volume format: ");
+        uint8_t volType = sd.vol()->fatType(); // For SdFat v2
+        if (volType == FAT_TYPE_EXFAT) Serial.println("exFAT");
+        else if (volType == FAT_TYPE_FAT32) Serial.println("FAT32");
+        else if (volType == FAT_TYPE_FAT16) Serial.println("FAT16");
+        else if (volType == 0) Serial.println("Not a FAT volume or error determining type.");
+        else { Serial.print("Unknown FAT type code: "); Serial.println(volType); }
+        Serial.println("--- End SD Card Details ---");
     }
 
 
@@ -173,8 +196,12 @@ void sdLoggingTask(void *pvParameters) {
                         now.year(), now.month(), now.day(),
                         now.hour(), now.minute(), now.second());
 
+                Serial.print("SdLoggingTask: Attempting to open log file: '");
+                Serial.print(filename);
+                Serial.println("'");
+
                 if (!logFile.open(filename, FILE_WRITE)) {
-                    Serial.print("Failed to open new log file: "); Serial.println(filename);
+                    Serial.print("SdLoggingTask: Failed to open new log file: "); Serial.println(filename);
                     g_sdCardStatus = SD_ERROR_OPEN;
                     // Critical error: stop recording to prevent data loss or queue overflow
                     // is_recording = false; // This should be managed by a higher-level task or user input
@@ -182,7 +209,7 @@ void sdLoggingTask(void *pvParameters) {
                     vTaskDelay(pdMS_TO_TICKS(1000)); // Wait before trying to create file again if still recording
                     continue;
                 }
-                Serial.print("Opened log file: "); Serial.println(filename);
+                Serial.print("SdLoggingTask: Successfully opened log file: "); Serial.println(filename);
                 fileIsOpen = true;
                 g_sdCardStatus = SD_OK; // File opened, SD status is OK for now
                 recordsInCurrentBatch = 0; // Reset batch counter for the new file
