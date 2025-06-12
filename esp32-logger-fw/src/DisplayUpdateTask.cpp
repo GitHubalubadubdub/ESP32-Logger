@@ -46,11 +46,13 @@ void displayUpdateTask(void *pvParameters) {
     while (1) {
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
 
-        // --- Basic Drawing Test ---
-        tft.fillRect(0, 0, 20, 20, ST77XX_RED);    // Red square at top-left
-        tft.fillRect(tft.width()-20, 0, 20, 20, ST77XX_GREEN); // Green square at top-right
-        tft.fillRect(0, tft.height()-20, 20, 20, ST77XX_BLUE);   // Blue square at bottom-left
-        // Serial.println("DisplayUpdateTask: Basic draw test executed."); // Optional: for serial confirmation
+        tft.fillScreen(ST77XX_CYAN); // Fill entire screen with CYAN
+        // Serial.println("DisplayUpdateTask: fillScreen(CYAN) executed"); // Optional
+
+        // --- Basic Drawing Test (Now Commented Out) ---
+        // tft.fillRect(0, 0, 20, 20, ST77XX_RED);    // Red square at top-left
+        // tft.fillRect(tft.width()-20, 0, 20, 20, ST77XX_GREEN); // Green square at top-right
+        // tft.fillRect(0, tft.height()-20, 20, 20, ST77XX_BLUE);   // Blue square at bottom-left
         // --- End Basic Drawing Test ---
 
         // --- Detect recording state change for screen refresh ---
