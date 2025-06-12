@@ -15,11 +15,11 @@
 #define IMU_SDA_PIN GPIO_NUM_8
 #define IMU_SCL_PIN GPIO_NUM_9
 
-// SD Card (SPI3/HSPI)
-#define SD_MOSI_PIN GPIO_NUM_35
-#define SD_MISO_PIN GPIO_NUM_37
-#define SD_SCK_PIN  GPIO_NUM_36
-#define SD_CS_PIN   GPIO_NUM_3 // Changed from GPIO_NUM_34
+// SD Card SPI Pins (SPI3/HSPI)
+#define SD_SCK_PIN  GPIO_NUM_36  // Serial Clock
+#define SD_MOSI_PIN GPIO_NUM_35  // Master Out Slave In
+#define SD_MISO_PIN GPIO_NUM_37  // Master In Slave Out
+#define SD_CS_PIN   GPIO_NUM_3   // Chip Select (Previously GPIO_NUM_34)
 
 // Buttons (ESP32-S3 Reverse TFT Feather)
 #define BUTTON_A_PIN GPIO_NUM_0  // BOOT/D0 button

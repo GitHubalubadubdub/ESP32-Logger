@@ -32,20 +32,60 @@ int recordsInCurrentBatch = 0;
 
 // Function to initialize SD card
 bool initializeSdCard() {
-    // SPI pins are defined in config.h
-    // SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN
-    SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN);
+    Serial.println("Attempting SD Card initialization...");
 
-    // SdSpiConfig(csPin, sharedSpiMode, sckRateMHz, spiPort)
-    // DEDICATED_SPI for ESP32 means it will use the pins provided and not assume VSPI/HSPI defaults
-    // Adjust SCK_MHZ as needed, 25MHz is a common starting point.
-    if (!sd.begin(SdSpiConfig(SD_CS_PIN, DEDICATED_SPI, SD_SCK_MHZ(25), &SPI))) {
-        Serial.println("SD Card initialization failed!");
-        g_sdCardStatus = SD_ERROR_INIT;
+    // Option 1: Let SdFat manage CS entirely with SdSpiConfig.
+    // Initialize SPI bus without specifying CS pin here.
+    Serial.println("Initializing SPI bus (SCK, MISO, MOSI)...");
+    // SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN); // Pass -1 for CS if your SPI lib version needs it, or omit.
+                                                       // For ESP32, just calling SPI.begin() without pins often uses default VSPI.
+                                                       // Or, be explicit with pins for a specific SPI host.
+                                                       // Let's assume we're using a specific SPI host (HSPI/SPI3 often used for SD on ESP32)
+                                                       // and want to explicitly set the pins for that bus.
+                                                       // The SdFat library will then use this initialized bus.
+
+    // If your board has a dedicated SPIClass instance for the SD slot (e.g., hspi), use that.
+    // Otherwise, use the default SPI.
+    // For now, let's assume the global SPI object is to be used and pins are set for it.
+    // If SPI.begin() is called without arguments it initializes VSPI.
+    // If specific pins are used for HSPI (SPI3), it should be SPIClass spi = SPIClass(HSPI); spi.begin(...);
+    // Given the pin numbers (35,36,37), these are non-default for VSPI on many ESP32s.
+    // This implies a specific SPI host or need to reconfigure default SPI.
+    // For now, let's try initializing the default SPI object with these specific pins.
+    // The Adalogger FeatherWing typically wires the SD card to specific pins that might not be the default VSPI.
+    // The ESP32 has multiple SPI controllers (SPI0/1 used for flash/psram, SPI2 (FSPI/VSPI), SPI3 (HSPI)).
+    // Pins 35,36,37 are typically associated with SPI3 (HSPI).
+    // Let's try to use HSPI.
+
+    SPIClass spiSD(HSPI); // Create an SPI instance for HSPI
+    Serial.println("Using HSPI/SPI3.");
+    Serial.print("Calling spiSD.begin(SCK="); Serial.print(SD_SCK_PIN);
+    Serial.print(", MISO="); Serial.print(SD_MISO_PIN);
+    Serial.print(", MOSI="); Serial.print(SD_MOSI_PIN);
+    Serial.println(")...");
+    spiSD.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN); // Initialize HSPI with specific pins, CS managed by SdFat
+
+    Serial.print("Attempting sd.begin() with SdSpiConfig: CS="); Serial.print(SD_CS_PIN);
+    Serial.println(", Speed=10MHz, SPI_OBJECT=&spiSD");
+
+    // Try a lower SPI speed, e.g., 10 MHz. Make sure to pass the correct SPI object.
+    // SdSpiConfig(uint8_t csPin, uint8_t spiSettings, uint32_t maxSck, SPIClass* spi);
+    // For ESP32, spiSettings is often DEDICATED_SPI or SHARED_SPI
+    if (!sd.begin(SdSpiConfig(SD_CS_PIN, DEDICATED_SPI, SD_SCK_MHZ(10), &spiSD))) {
+        Serial.println("sd.begin() failed.");
+        // Try to get more detailed error information if available
+        if (sd.card()) {
+            Serial.print("Card error code: 0x"); Serial.println(sd.card()->errorCode(), HEX);
+            Serial.print("Card error data: 0x"); Serial.println(sd.card()->errorData(), HEX);
+        } else {
+            Serial.println("No card object available for error details.");
+        }
+        g_sdCardStatus = SD_ERROR_INIT; // Or a more specific error if known
         return false;
     }
-    Serial.println("SD Card initialized.");
-    g_sdCardStatus = SD_OK; // Set to OK, might be updated by file operations later
+
+    Serial.println("SD Card initialized successfully.");
+    g_sdCardStatus = SD_OK;
     return true;
 }
 
