@@ -55,8 +55,15 @@ void IRAM_ATTR button_a_isr_handler() {
 }
 
 void setup() {
+    unsigned long setup_entry_time = millis(); // Moved to the very top
+    unsigned long last_timestamp = setup_entry_time;
+
     Serial.begin(115200);
-    unsigned long setup_start_time = millis();
+    Serial.println("Serial initialized at top of setup().");
+    Serial.print("Time after Serial init: "); Serial.print(millis() - last_timestamp); Serial.println("ms");
+    last_timestamp = millis();
+
+    unsigned long setup_start_time = millis(); // This is for the !Serial timeout, can be kept or removed if not strictly needed
     while (!Serial && (millis() - setup_start_time < 5000)); // Wait for serial, but timeout after 5s
 
     Serial.println("--- ESP32 Logger Starting Up ---");
@@ -67,6 +74,8 @@ void setup() {
         Serial.println("CRITICAL ERROR: Failed to create debug settings mutex!");
         // Handle error: perhaps loop indefinitely or restart
     }
+    Serial.print("Time after Mutex creation: "); Serial.print(millis() - last_timestamp); Serial.println("ms");
+    last_timestamp = millis();
 
     // Initialize Display
     Serial.println("--- TFT Initialization Diagnostics ---");
@@ -105,11 +114,15 @@ void setup() {
     tft.println("Logger Booting..."); // Boot message to TFT
     Serial.println("After tft.println(\"Logger Booting...\")");
     Serial.println("--- End TFT Initialization Diagnostics ---");
+    Serial.print("Time after TFT init block: "); Serial.print(millis() - last_timestamp); Serial.println("ms");
+    last_timestamp = millis();
 
     // Initialize Button A (D0) for recording toggle
     pinMode(BUTTON_A_PIN, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(BUTTON_A_PIN), button_a_isr_handler, FALLING);
     Serial.printf("Button A (GPIO%d) initialized for recording toggle.\n", BUTTON_A_PIN);
+    Serial.print("Time after Button init: "); Serial.print(millis() - last_timestamp); Serial.println("ms");
+    last_timestamp = millis();
 
     // Initialize global recording state
     is_recording = false;
@@ -123,6 +136,8 @@ void setup() {
         while(1);
     } else {
         Serial.printf("Logging queue created. Size: %d records of %d bytes each.\n", LOGGING_QUEUE_LENGTH, sizeof(LogRecordV1));
+        Serial.print("Time after Queue creation: "); Serial.print(millis() - last_timestamp); Serial.println("ms");
+        last_timestamp = millis();
     }
 
     // --- Create FreeRTOS tasks ---
@@ -137,6 +152,8 @@ void setup() {
         Serial.println("ERROR: Failed to create Data Acquisition Task!");
     } else {
         Serial.println("Data Acquisition Task created (Core 1, Prio 5).");
+        Serial.print("Time after DataAcqTask creation: "); Serial.print(millis() - last_timestamp); Serial.println("ms");
+        last_timestamp = millis();
     }
 
     // SD Logging Task: Medium priority, can be on PRO_CPU as it involves file I/O. Larger stack for SdFat.
@@ -144,17 +161,22 @@ void setup() {
         Serial.println("ERROR: Failed to create SD Logging Task!");
     } else {
         Serial.println("SD Logging Task created (Core 0, Prio 3).");
+        Serial.print("Time after SdLogTask creation: "); Serial.print(millis() - last_timestamp); Serial.println("ms");
+        last_timestamp = millis();
     }
 
     // Display Update Task: Lower priority, can be on PRO_CPU
-    if (xTaskCreatePinnedToCore(displayUpdateTask, "DisplayTask", 4096, NULL, 2, NULL, 0) != pdPASS) { // Lower priority
+    if (xTaskCreatePinnedToCore(displayUpdateTask, "DisplayTask", 8192, NULL, 2, NULL, 0) != pdPASS) { // Lower priority, increased stack
         Serial.println("ERROR: Failed to create Display Update Task!");
     } else {
-        Serial.println("Display Update Task created (Core 0, Prio 2).");
+        Serial.println("Display Update Task created (Core 0, Prio 2, Stack 8192).");
+        Serial.print("Time after DisplayTask creation: "); Serial.print(millis() - last_timestamp); Serial.println("ms");
+        last_timestamp = millis();
     }
 
     // Add other task creations here if needed (e.g., BleManagerTask, WifiHandlerTask)
 
+    Serial.print("Total setup() time: "); Serial.print(millis() - setup_entry_time); Serial.println("ms");
     Serial.println("--- System setup complete. Tasks running. ---");
     // Message to TFT indicating tasks started, can be part of DisplayUpdateTask's initial draw.
     // tft.setCursor(10, tft.getCursorY() + tft.fontHeight(2) + 5); // Move cursor below "Logger Booting..."

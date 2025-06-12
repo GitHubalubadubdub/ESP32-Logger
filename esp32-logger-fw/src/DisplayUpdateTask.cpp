@@ -32,21 +32,33 @@ void displayUpdateTask(void *pvParameters) {
     // TFT initialization (tft.begin(), tft.setRotation()) is assumed to be done in main.cpp's setup().
     // If not, it should be done here, guarded by a flag.
 
+    Serial.print("DisplayUpdateTask: Started on core ");
+    Serial.println(xPortGetCoreID());
+    Serial.print("DisplayUpdateTask: Current stack high water mark: ");
+    Serial.println(uxTaskGetStackHighWaterMark(NULL)); // NULL for current task
+
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(333); // Update rate: ~3Hz (333ms)
 
     // One-time setup on task start: ensure screen is clear and set base text properties
-    tft.fillScreen(ST77XX_BLACK);
-    tft.setTextWrap(false);
-    tft.setTextColor(ST77XX_WHITE); // Default text color
-    tft.setTextSize(2);           // Default text size
+    // tft.fillScreen(ST77XX_BLACK); // Commented out as per simplified test
+    // tft.setTextWrap(false);
+    // tft.setTextColor(ST77XX_WHITE); // Default text color
+    // tft.setTextSize(2);           // Default text size
 
-    Serial.println("DisplayUpdateTask: Started and initialized.");
+    // Serial.println("DisplayUpdateTask: Started and initialized."); // Moved to top
 
     while (1) {
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
+        Serial.println("DisplayUpdateTask: Loop entry.");
+        Serial.print("DisplayUpdateTask: Stack HWM before fillScreen: ");
+        Serial.println(uxTaskGetStackHighWaterMark(NULL));
 
+        Serial.println("DisplayUpdateTask: Calling tft.fillScreen(CYAN)...");
         tft.fillScreen(ST77XX_CYAN); // Fill entire screen with CYAN
+        Serial.println("DisplayUpdateTask: tft.fillScreen(CYAN) called.");
+        Serial.print("DisplayUpdateTask: Stack HWM after fillScreen: ");
+        Serial.println(uxTaskGetStackHighWaterMark(NULL));
         // Serial.println("DisplayUpdateTask: fillScreen(CYAN) executed"); // Optional
 
         // --- Basic Drawing Test (Now Commented Out) ---
