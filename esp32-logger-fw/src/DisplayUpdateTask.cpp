@@ -50,15 +50,15 @@ void displayUpdateTask(void *pvParameters) {
 
     while (1) {
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
-        Serial.println("DisplayUpdateTask: Loop entry.");
-        Serial.print("DisplayUpdateTask: Stack HWM before fillScreen: ");
-        Serial.println(uxTaskGetStackHighWaterMark(NULL));
+        // Serial.println("DisplayUpdateTask: Loop entry.");
+        // Serial.print("DisplayUpdateTask: Stack HWM before fillScreen: ");
+        // Serial.println(uxTaskGetStackHighWaterMark(NULL));
 
-        Serial.println("DisplayUpdateTask: Calling tft.fillScreen(CYAN)...");
+        // Serial.println("DisplayUpdateTask: Calling tft.fillScreen(CYAN)...");
         tft.fillScreen(ST77XX_CYAN); // Fill entire screen with CYAN
-        Serial.println("DisplayUpdateTask: tft.fillScreen(CYAN) called.");
-        Serial.print("DisplayUpdateTask: Stack HWM after fillScreen: ");
-        Serial.println(uxTaskGetStackHighWaterMark(NULL));
+        // Serial.println("DisplayUpdateTask: tft.fillScreen(CYAN) called.");
+        // Serial.print("DisplayUpdateTask: Stack HWM after fillScreen: ");
+        // Serial.println(uxTaskGetStackHighWaterMark(NULL));
         // Serial.println("DisplayUpdateTask: fillScreen(CYAN) executed"); // Optional
 
         // --- Basic Drawing Test (Now Commented Out) ---

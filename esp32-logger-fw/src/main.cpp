@@ -69,7 +69,9 @@ void setup() {
     Serial.println("--- ESP32 Logger Starting Up ---");
 
     // Initialize global debug settings mutex
+    Serial.println("Before xSemaphoreCreateMutex for g_debugSettingsMutex.");
     g_debugSettingsMutex = xSemaphoreCreateMutex();
+    Serial.println("After xSemaphoreCreateMutex for g_debugSettingsMutex.");
     if (g_debugSettingsMutex == NULL) {
         Serial.println("CRITICAL ERROR: Failed to create debug settings mutex!");
         // Handle error: perhaps loop indefinitely or restart
@@ -79,6 +81,13 @@ void setup() {
 
     // Initialize Display
     Serial.println("--- TFT Initialization Diagnostics ---");
+
+    Serial.println("Configuring global SPI for TFT (HSPI pins)...");
+    // Assuming TFT_SCLK, TFT_MISO, TFT_MOSI are defined in pins_arduino.h for the variant
+    // For ESP32-S3 Reverse TFT, these are typically HSPI pins 36, 37, 35
+    SPI.begin(TFT_SCLK, TFT_MISO, TFT_MOSI, -1); // Use -1 for CS as it's handled by tft object constructor
+    Serial.println("Global SPI configured for TFT.");
+
     Serial.print("Expected TFT_CS Pin (from variant): "); Serial.println(TFT_CS);
     Serial.print("Expected TFT_DC Pin (from variant): "); Serial.println(TFT_DC);
     Serial.print("Expected TFT_RST Pin (from variant): "); Serial.println(TFT_RST);
