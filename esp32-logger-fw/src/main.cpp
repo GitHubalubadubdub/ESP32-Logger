@@ -82,11 +82,9 @@ void setup() {
     // Initialize Display
     Serial.println("--- TFT Initialization Diagnostics ---");
 
-    Serial.println("Configuring global SPI for TFT (HSPI pins)...");
-    // Assuming TFT_SCLK, TFT_MISO, TFT_MOSI are defined in pins_arduino.h for the variant
-    // For ESP32-S3 Reverse TFT, these are typically HSPI pins 36, 37, 35
-    SPI.begin(TFT_SCLK, TFT_MISO, TFT_MOSI, -1); // Use -1 for CS as it's handled by tft object constructor
-    Serial.println("Global SPI configured for TFT.");
+    // SPI.begin() for TFT was removed as it's likely handled by tft.init() or variant init.
+    // Or, if SD card uses the same HSPI bus and initializes it first, that might be sufficient.
+    // The tft object uses the global SPI instance.
 
     Serial.print("Expected TFT_CS Pin (from variant): "); Serial.println(TFT_CS);
     Serial.print("Expected TFT_DC Pin (from variant): "); Serial.println(TFT_DC);
