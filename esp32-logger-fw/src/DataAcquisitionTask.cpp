@@ -71,10 +71,11 @@ void dataAcquisitionTask(void *pvParameters) {
 
             // Send to the queue
             // The last parameter is the block time. 0 means don't block if the queue is full.
-            if (xQueueSend(xLoggingQueue, &logRecord, (TickType_t)0) != pdPASS) {
-                // Handle queue full error, e.g., log an error message via Serial
-                // Serial.println("Data Acquisition: Failed to send to logging queue (full?)");
-            }
+            // if (xQueueSend(xLoggingQueue, &logRecord, (TickType_t)0) != pdPASS) {
+            //     // Handle queue full error, e.g., log an error message via Serial
+            //     // Serial.println("Data Acquisition: Failed to send to logging queue (full?)");
+            // }
+            Serial.println("DataAcquisitionTask: xQueueSend commented out for testing.");
         }
     }
 }

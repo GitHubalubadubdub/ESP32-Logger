@@ -177,13 +177,13 @@ void setup() {
     }
 
     // SD Logging Task: Medium priority, can be on PRO_CPU as it involves file I/O. Larger stack for SdFat.
-    if (xTaskCreatePinnedToCore(sdLoggingTask, "SdLogTask", 8192, NULL, 3, NULL, 0) != pdPASS) {
-        Serial.println("ERROR: Failed to create SD Logging Task!");
-    } else {
-        Serial.println("SD Logging Task created (Core 0, Prio 3).");
-        Serial.print("Time after SdLogTask creation: "); Serial.print(millis() - last_timestamp); Serial.println("ms");
-        last_timestamp = millis();
-    }
+    // if (xTaskCreatePinnedToCore(sdLoggingTask, "SdLogTask", 8192, NULL, 3, NULL, 0) != pdPASS) {
+    //     Serial.println("ERROR: Failed to create SD Logging Task!");
+    // } else {
+    //     Serial.println("SD Logging Task created (Core 0, Prio 3).");
+    //     Serial.print("Time after SdLogTask creation: "); Serial.print(millis() - last_timestamp); Serial.println("ms");
+    //     last_timestamp = millis(); // This line is also commented, next timing will be relative to DataAcqTask
+    // }
 
     // Display Update Task: Lower priority, can be on PRO_CPU
     if (xTaskCreatePinnedToCore(displayUpdateTask, "DisplayTask", 8192, NULL, 2, NULL, 0) != pdPASS) { // Lower priority, increased stack
