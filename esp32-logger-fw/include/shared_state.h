@@ -23,6 +23,10 @@ typedef enum {
     SD_ERROR_INIT,
     SD_ERROR_OPEN,
     SD_ERROR_WRITE,
-    SD_NOT_PRESENT // Could be same as SD_ERROR_INIT but more specific
+    SD_NOT_PRESENT, // Could be same as SD_ERROR_INIT but more specific
+    SD_ERROR_INIT_MUTEX,  // Failed to get mutex during SD init
+    SD_ERROR_OPEN_MUTEX,  // Failed to get mutex for file open
+    SD_ERROR_WRITE_MUTEX, // Failed to get mutex for file write/flush
+    SD_ERROR_CLOSE_MUTEX  // Failed to get mutex for file close
 } SdCardStatus_t;
 extern volatile SdCardStatus_t g_sdCardStatus;

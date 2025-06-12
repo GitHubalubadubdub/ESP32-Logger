@@ -13,6 +13,7 @@
 // Or for integrated displays: Adafruit_ST7789 tft = Adafruit_ST7789(TFT_WIDTH, TFT_HEIGHT, TFT_SPI_PORT ...);
 // For this board, it's often simpler:
 extern Adafruit_ST7789 tft;
+extern SemaphoreHandle_t g_hspiMutex; // Mutex for HSPI bus access
 
 
 // Screen state
@@ -50,12 +51,22 @@ void displayUpdateTask(void *pvParameters) {
 
     while (1) {
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
-        Serial.println("DisplayUpdateTask: Loop entry - Attempting cyan fill."); // Ensure this line is active
-        // Serial.print("DisplayUpdateTask: Stack HWM before fillScreen: ");
+        Serial.println("DisplayUpdateTask: Loop entry."); // General loop entry
+        if (g_hspiMutex != NULL && xSemaphoreTake(g_hspiMutex, pdMS_TO_TICKS(100)) == pdTRUE) { // Check if mutex is valid before taking
+            Serial.println("DisplayUpdateTask: HSPI Mutex taken. Attempting cyan fill.");
+            tft.fillScreen(ST77XX_CYAN);
+            xSemaphoreGive(g_hspiMutex);
+            Serial.println("DisplayUpdateTask: HSPI Mutex given. Cyan fill done.");
+        } else {
+            Serial.println("DisplayUpdateTask: Timeout or invalid HSPI mutex! Skipping TFT update.");
+            // Optionally, add a small delay here if mutex is frequently unavailable
+            // vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        // Serial.print("DisplayUpdateTask: Stack HWM before fillScreen: "); // These were commented out, keep them so
         // Serial.println(uxTaskGetStackHighWaterMark(NULL));
 
-        // Serial.println("DisplayUpdateTask: Calling tft.fillScreen(CYAN)...");
-        tft.fillScreen(ST77XX_CYAN); // Fill entire screen with CYAN
+        // Serial.println("DisplayUpdateTask: Calling tft.fillScreen(CYAN)..."); // This specific one is replaced by the mutex block
+        // tft.fillScreen(ST77XX_CYAN); // This is now inside the mutex block
         // Serial.println("DisplayUpdateTask: tft.fillScreen(CYAN) called.");
         // Serial.print("DisplayUpdateTask: Stack HWM after fillScreen: ");
         // Serial.println(uxTaskGetStackHighWaterMark(NULL));

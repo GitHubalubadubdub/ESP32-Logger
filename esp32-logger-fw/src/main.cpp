@@ -26,6 +26,7 @@ volatile bool is_recording = false;
 volatile SdCardStatus_t g_sdCardStatus = SD_NOT_INITIALIZED; // Initial state
 volatile DebugSettings g_debugSettings; // Definition for the global debug settings struct
 SemaphoreHandle_t g_debugSettingsMutex; // Definition for its mutex
+SemaphoreHandle_t g_hspiMutex;          // Mutex for shared HSPI bus access
 
 // --- Dedicated SPI for TFT ---
 SPIClass spiTFT(HSPI); // Use HSPI for the TFT
@@ -80,8 +81,19 @@ void setup() {
     //     Serial.println("CRITICAL ERROR: Failed to create debug settings mutex!");
     //     // Handle error: perhaps loop indefinitely or restart
     // }
-    Serial.print("Time after (Commented Out) Mutex creation: "); Serial.print(millis() - last_timestamp); Serial.println("ms");
+    Serial.print("Time after (Commented Out) Debug Mutex creation: "); Serial.print(millis() - last_timestamp); Serial.println("ms");
     last_timestamp = millis(); // Ensure last_timestamp is updated for next measurement
+
+    Serial.println("Before xSemaphoreCreateMutex for g_hspiMutex.");
+    g_hspiMutex = xSemaphoreCreateMutex();
+    if (g_hspiMutex == NULL) {
+        Serial.println("CRITICAL ERROR: Failed to create g_hspiMutex!");
+        while(1) { vTaskDelay(pdMS_TO_TICKS(1000)); } // Halt on critical error
+    } else {
+        Serial.println("g_hspiMutex created successfully.");
+    }
+    Serial.print("Time after HSPI Mutex creation: "); Serial.print(millis() - last_timestamp); Serial.println("ms");
+    last_timestamp = millis(); // Reset for next block
 
     // Initialize Display
     Serial.println("--- TFT Initialization Diagnostics ---");
@@ -96,43 +108,53 @@ void setup() {
     Serial.print("Expected TFT_DC Pin (from variant): "); Serial.println(TFT_DC);
     Serial.print("Expected TFT_RST Pin (from variant): "); Serial.println(TFT_RST);
 
-    Serial.println("Before tft.init(135, 240)");
-    tft.init(135, 240); // For ESP32-S3 Reverse TFT.
-    Serial.println("After tft.init(135, 240)");
+    Serial.println("Attempting to take HSPI mutex for TFT setup...");
+    if (g_hspiMutex != NULL && xSemaphoreTake(g_hspiMutex, pdMS_TO_TICKS(1000)) == pdTRUE) { // Long timeout for setup phase
+        Serial.println("HSPI mutex taken for TFT setup.");
 
-    #ifdef TFT_BACKLITE // Check if TFT_BACKLITE is defined by pins_arduino.h
-        Serial.println("Attempting to enable TFT backlight using TFT_BACKLITE pin...");
-        pinMode(TFT_BACKLITE, OUTPUT);
-        digitalWrite(TFT_BACKLITE, HIGH);
-        Serial.print("TFT_BACKLITE pin ("); Serial.print(TFT_BACKLITE); Serial.println(") set to HIGH.");
-    #else
-        Serial.println("Warning: TFT_BACKLITE macro not defined by board variant. Backlight might not enable.");
-    #endif
+        Serial.println("Before tft.init(135, 240)");
+        tft.init(135, 240); // For ESP32-S3 Reverse TFT.
+        Serial.println("After tft.init(135, 240)");
 
-    Serial.println("Before tft.setRotation(3)");
-    tft.setRotation(3); // Landscape (or portrait depending on display mounting)
-    Serial.println("After tft.setRotation(3)");
+        #ifdef TFT_BACKLITE // Check if TFT_BACKLITE is defined by pins_arduino.h
+            Serial.println("Attempting to enable TFT backlight using TFT_BACKLITE pin...");
+            pinMode(TFT_BACKLITE, OUTPUT);
+            digitalWrite(TFT_BACKLITE, HIGH);
+            Serial.print("TFT_BACKLITE pin ("); Serial.print(TFT_BACKLITE); Serial.println(") set to HIGH.");
+        #else
+            Serial.println("Warning: TFT_BACKLITE macro not defined by board variant. Backlight might not enable.");
+        #endif
 
-    Serial.println("Attempting to set TFT SPI speed...");
-    uint32_t tft_spi_speed = 10000000; // Try 10 MHz
-    // The tft object is Adafruit_ST7789 which inherits from Adafruit_SPITFT.
-    // Adafruit_SPITFT has a public setSPISpeed(uint32_t freq) method.
-    tft.setSPISpeed(tft_spi_speed);
-    Serial.print("TFT SPI speed set to: "); Serial.println(tft_spi_speed);
+        Serial.println("Before tft.setRotation(3)");
+        tft.setRotation(3); // Landscape (or portrait depending on display mounting)
+        Serial.println("After tft.setRotation(3)");
 
-    Serial.println("Before tft.fillScreen(ST77XX_BLACK)");
-    tft.fillScreen(ST77XX_BLACK);
-    Serial.println("After tft.fillScreen(ST77XX_BLACK)");
+        Serial.println("Attempting to set TFT SPI speed...");
+        uint32_t tft_spi_speed = 10000000; // Try 10 MHz
+        // The tft object is Adafruit_ST7789 which inherits from Adafruit_SPITFT.
+        // Adafruit_SPITFT has a public setSPISpeed(uint32_t freq) method.
+        tft.setSPISpeed(tft_spi_speed);
+        Serial.print("TFT SPI speed set to: "); Serial.println(tft_spi_speed);
 
-    Serial.println("Before tft.setCursor/setTextSize/setTextColor for boot message");
-    tft.setCursor(10, 10); // Adjusted from 5,5 and size 1 to 10,10 and size 2 for "Logger Booting..."
-    tft.setTextSize(2);    // Consistent with previous full version's "TFT Initialized!"
-    tft.setTextColor(ST77XX_WHITE);
-    Serial.println("After tft.setCursor/setTextSize/setTextColor for boot message");
+        Serial.println("Before tft.fillScreen(ST77XX_BLACK)");
+        tft.fillScreen(ST77XX_BLACK);
+        Serial.println("After tft.fillScreen(ST77XX_BLACK)");
 
-    Serial.println("Before tft.println(\"Logger Booting...\")");
-    tft.println("Logger Booting..."); // Boot message to TFT
-    Serial.println("After tft.println(\"Logger Booting...\")");
+        Serial.println("Before tft.setCursor/setTextSize/setTextColor for boot message");
+        tft.setCursor(10, 10); // Adjusted from 5,5 and size 1 to 10,10 and size 2 for "Logger Booting..."
+        tft.setTextSize(2);    // Consistent with previous full version's "TFT Initialized!"
+        tft.setTextColor(ST77XX_WHITE);
+        Serial.println("After tft.setCursor/setTextSize/setTextColor for boot message");
+
+        Serial.println("Before tft.println(\"Logger Booting...\")");
+        tft.println("Logger Booting..."); // Boot message to TFT
+        Serial.println("After tft.println(\"Logger Booting...\")");
+
+        xSemaphoreGive(g_hspiMutex);
+        Serial.println("HSPI mutex given after TFT setup.");
+    } else {
+        Serial.println("CRITICAL ERROR: Timeout or invalid HSPI mutex during TFT setup! TFT might not work.");
+    }
     Serial.println("--- End TFT Initialization Diagnostics ---");
     Serial.print("Time after TFT init block: "); Serial.print(millis() - last_timestamp); Serial.println("ms");
     last_timestamp = millis();

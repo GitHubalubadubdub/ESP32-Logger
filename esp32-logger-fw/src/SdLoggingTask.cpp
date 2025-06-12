@@ -8,7 +8,11 @@
 
 #include "LogDataStructure.h" // From src directory
 #include "config.h"           // For SD_CS_PIN etc.
-#include "shared_state.h"     // For is_recording, g_sdCardStatus
+#include "shared_state.h"     // For is_recording, g_sdCardStatus, SdCardStatus_t new error enums
+#include "freertos/semphr.h"  // For SemaphoreHandle_t and mutex functions
+
+// HSPI Mutex (defined in main.cpp)
+extern SemaphoreHandle_t g_hspiMutex;
 
 // RTC object
 RTC_PCF8523 rtc;
@@ -32,60 +36,53 @@ int recordsInCurrentBatch = 0;
 
 // Function to initialize SD card
 bool initializeSdCard() {
-    Serial.println("Attempting SD Card initialization...");
+    bool hspi_mutex_acquired = false;
+    Serial.println("SdLoggingTask: initializeSdCard() attempting to take HSPI mutex...");
+    if (g_hspiMutex != NULL && xSemaphoreTake(g_hspiMutex, pdMS_TO_TICKS(1000)) == pdTRUE) { // Longer timeout for init
+        hspi_mutex_acquired = true;
+        Serial.println("SdLoggingTask: initializeSdCard() HSPI mutex taken.");
+    } else {
+        Serial.println("SdLoggingTask: initializeSdCard() timeout or invalid HSPI mutex! Cannot init SD card.");
+        g_sdCardStatus = SD_ERROR_INIT_MUTEX; // Define this new status
+        return false;
+    }
 
-    // Option 1: Let SdFat manage CS entirely with SdSpiConfig.
-    // Initialize SPI bus without specifying CS pin here.
-    Serial.println("Initializing SPI bus (SCK, MISO, MOSI)...");
-    // SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN); // Pass -1 for CS if your SPI lib version needs it, or omit.
-                                                       // For ESP32, just calling SPI.begin() without pins often uses default VSPI.
-                                                       // Or, be explicit with pins for a specific SPI host.
-                                                       // Let's assume we're using a specific SPI host (HSPI/SPI3 often used for SD on ESP32)
-                                                       // and want to explicitly set the pins for that bus.
-                                                       // The SdFat library will then use this initialized bus.
+    Serial.println("Attempting SD Card initialization (inside mutex)...");
 
-    // If your board has a dedicated SPIClass instance for the SD slot (e.g., hspi), use that.
-    // Otherwise, use the default SPI.
-    // For now, let's assume the global SPI object is to be used and pins are set for it.
-    // If SPI.begin() is called without arguments it initializes VSPI.
-    // If specific pins are used for HSPI (SPI3), it should be SPIClass spi = SPIClass(HSPI); spi.begin(...);
-    // Given the pin numbers (35,36,37), these are non-default for VSPI on many ESP32s.
-    // This implies a specific SPI host or need to reconfigure default SPI.
-    // For now, let's try initializing the default SPI object with these specific pins.
-    // The Adalogger FeatherWing typically wires the SD card to specific pins that might not be the default VSPI.
-    // The ESP32 has multiple SPI controllers (SPI0/1 used for flash/psram, SPI2 (FSPI/VSPI), SPI3 (HSPI)).
-    // Pins 35,36,37 are typically associated with SPI3 (HSPI).
-    // Let's try to use HSPI.
-
-    SPIClass spiSD(HSPI); // Create an SPI instance for HSPI
-    Serial.println("Using HSPI/SPI3.");
+    // Using HSPI for SD card, as established.
+    SPIClass spiSD(HSPI);
+    Serial.println("Using HSPI/SPI3 for SD card.");
     Serial.print("Calling spiSD.begin(SCK="); Serial.print(SD_SCK_PIN);
     Serial.print(", MISO="); Serial.print(SD_MISO_PIN);
     Serial.print(", MOSI="); Serial.print(SD_MOSI_PIN);
     Serial.println(")...");
-    spiSD.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN); // Initialize HSPI with specific pins, CS managed by SdFat
+    spiSD.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN);
 
     Serial.print("Attempting sd.begin() with SdSpiConfig: CS="); Serial.print(SD_CS_PIN);
     Serial.println(", Speed=10MHz, SPI_OBJECT=&spiSD");
 
-    // Try a lower SPI speed, e.g., 10 MHz. Make sure to pass the correct SPI object.
-    // SdSpiConfig(uint8_t csPin, uint8_t spiSettings, uint32_t maxSck, SPIClass* spi);
-    // For ESP32, spiSettings is often DEDICATED_SPI or SHARED_SPI
     if (!sd.begin(SdSpiConfig(SD_CS_PIN, DEDICATED_SPI, SD_SCK_MHZ(10), &spiSD))) {
         Serial.println("sd.begin() failed.");
-        // Try to get more detailed error information if available
         if (sd.card()) {
             Serial.print("Card error code: 0x"); Serial.println(sd.card()->errorCode(), HEX);
             Serial.print("Card error data: 0x"); Serial.println(sd.card()->errorData(), HEX);
         } else {
             Serial.println("No card object available for error details.");
         }
-        g_sdCardStatus = SD_ERROR_INIT; // Or a more specific error if known
+        g_sdCardStatus = SD_ERROR_INIT;
+        if (hspi_mutex_acquired) {
+            xSemaphoreGive(g_hspiMutex);
+            Serial.println("SdLoggingTask: initializeSdCard() HSPI mutex given on error path.");
+        }
         return false;
     }
 
     Serial.println("SD Card initialized successfully.");
     g_sdCardStatus = SD_OK;
+    if (hspi_mutex_acquired) {
+        xSemaphoreGive(g_hspiMutex);
+        Serial.println("SdLoggingTask: initializeSdCard() HSPI mutex given on success.");
+    }
     return true;
 }
 
@@ -108,19 +105,32 @@ bool initializeRtc() {
 }
 
 void flushBufferToSd() {
-    if (recordsInCurrentBatch > 0 && logFile.isOpen()) {
-        size_t bytesToWrite = sizeof(LogRecordV1) * recordsInCurrentBatch;
-        if (logFile.write(recordBuffer, bytesToWrite) != bytesToWrite) {
-            Serial.println("SD Write Error!");
-            g_sdCardStatus = SD_ERROR_WRITE;
-            // Consider actions: stop recording, try to close/reopen file, etc.
-        } else {
-            // Serial.printf("Wrote %d records (%d bytes) to SD.\n", recordsInCurrentBatch, bytesToWrite);
+    bool hspi_mutex_acquired = false;
+    Serial.println("SdLoggingTask: flushBufferToSd() attempting to take HSPI mutex...");
+    if (g_hspiMutex != NULL && xSemaphoreTake(g_hspiMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+        hspi_mutex_acquired = true;
+        Serial.println("SdLoggingTask: flushBufferToSd() HSPI mutex taken.");
+    } else {
+        Serial.println("SdLoggingTask: flushBufferToSd() timeout or invalid HSPI mutex! Data not flushed.");
+        g_sdCardStatus = SD_ERROR_WRITE_MUTEX; // New status
+        // Not returning, as the function is void. Error status is set.
+    }
+
+    if (hspi_mutex_acquired) {
+        if (recordsInCurrentBatch > 0 && logFile.isOpen()) {
+            size_t bytesToWrite = sizeof(LogRecordV1) * recordsInCurrentBatch;
+            if (logFile.write(recordBuffer, bytesToWrite) != bytesToWrite) {
+                Serial.println("SD Write Error!");
+                g_sdCardStatus = SD_ERROR_WRITE;
+                // Consider actions: stop recording, try to close/reopen file, etc.
+            } else {
+                // Serial.printf("Wrote %d records (%d bytes) to SD.\n", recordsInCurrentBatch, bytesToWrite);
+            }
+            recordsInCurrentBatch = 0; // Reset batch count
+            // logFile.sync(); // Consider if sync is needed here and its performance impact
         }
-        recordsInCurrentBatch = 0; // Reset batch count
-        // Periodically sync the file to ensure data is written to card from cache
-        // This has a performance cost, so use judiciously or at end of file.
-        // logFile.sync();
+        xSemaphoreGive(g_hspiMutex);
+        Serial.println("SdLoggingTask: flushBufferToSd() HSPI mutex given.");
     }
 }
 
@@ -129,6 +139,7 @@ void sdLoggingTask(void *pvParameters) {
     bool rtcInitialized = false;
     bool fileIsOpen = false;
     char filename[40]; // Buffer for filename e.g., /log_YYYYMMDD_HHMMSS.bin (adjust size if needed)
+    bool hspi_mutex_acquired_for_file_op = false; // Flag for file open/close operations
 
     // Initial status
     g_sdCardStatus = SD_NOT_INITIALIZED;
@@ -200,18 +211,42 @@ void sdLoggingTask(void *pvParameters) {
                 Serial.print(filename);
                 Serial.println("'");
 
-                if (!logFile.open(filename, FILE_WRITE)) {
-                    Serial.print("SdLoggingTask: Failed to open new log file: "); Serial.println(filename);
-                    g_sdCardStatus = SD_ERROR_OPEN;
-                    // Critical error: stop recording to prevent data loss or queue overflow
-                    // is_recording = false; // This should be managed by a higher-level task or user input
-                    // For now, just prevent further writes in this session.
-                    vTaskDelay(pdMS_TO_TICKS(1000)); // Wait before trying to create file again if still recording
+                Serial.println("SdLoggingTask: Attempting to take HSPI mutex for file open...");
+                if (g_hspiMutex != NULL && xSemaphoreTake(g_hspiMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+                    hspi_mutex_acquired_for_file_op = true;
+                    Serial.println("SdLoggingTask: HSPI mutex taken for file open.");
+
+                    if (!logFile.open(filename, FILE_WRITE)) {
+                        Serial.print("SdLoggingTask: Failed to open new log file (inside mutex): "); Serial.println(filename);
+                        g_sdCardStatus = SD_ERROR_OPEN;
+                        fileIsOpen = false; // Ensure file is not considered open
+                        // is_recording = false; // Stop recording might be too drastic here, task will retry
+                    } else {
+                        Serial.print("SdLoggingTask: Successfully opened log file (inside mutex): "); Serial.println(filename);
+                        fileIsOpen = true;
+                        g_sdCardStatus = SD_OK;
+                        recordsInCurrentBatch = 0;
+                    }
+                    xSemaphoreGive(g_hspiMutex);
+                    Serial.println("SdLoggingTask: HSPI mutex given after file open attempt.");
+                    hspi_mutex_acquired_for_file_op = false; // Reset flag
+
+                    if (!fileIsOpen) { // If file opening failed even with mutex
+                         vTaskDelay(pdMS_TO_TICKS(1000)); // Wait before trying to create file again
+                         continue;
+                    }
+
+                } else {
+                    Serial.println("SdLoggingTask: Timeout or invalid HSPI mutex for file open! Skipping.");
+                    g_sdCardStatus = SD_ERROR_OPEN_MUTEX; // New status
+                    // is_recording = false; // Stop recording if cannot access bus for file open
+                                          // Task will retry initialization or file opening.
+                    vTaskDelay(pdMS_TO_TICKS(1000)); // Wait before trying again
                     continue;
                 }
-                Serial.print("SdLoggingTask: Successfully opened log file: "); Serial.println(filename);
-                fileIsOpen = true;
-                g_sdCardStatus = SD_OK; // File opened, SD status is OK for now
+                // Serial.print("SdLoggingTask: Successfully opened log file: "); Serial.println(filename); // Moved inside mutex block
+                // fileIsOpen = true; // Moved inside mutex block
+                // g_sdCardStatus = SD_OK; // File opened, SD status is OK for now // Moved inside mutex block
                 recordsInCurrentBatch = 0; // Reset batch counter for the new file
             }
 
@@ -248,11 +283,21 @@ void sdLoggingTask(void *pvParameters) {
         } else { // Not recording
             if (fileIsOpen) {
                 Serial.println("Recording stopped by external flag. Finalizing log file.");
-                flushBufferToSd(); // Write any remaining data
-                logFile.close();
-                fileIsOpen = false;
-                Serial.println("Log file closed.");
-                g_sdCardStatus = SD_OK; // Reset status to OK after successful close
+                flushBufferToSd(); // This will handle its own mutex for writing
+
+                Serial.println("SdLoggingTask: Attempting to take HSPI mutex for file close...");
+                if (g_hspiMutex != NULL && xSemaphoreTake(g_hspiMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+                    Serial.println("SdLoggingTask: HSPI mutex taken for file close.");
+                    logFile.close();
+                    xSemaphoreGive(g_hspiMutex);
+                    Serial.println("SdLoggingTask: HSPI mutex given after file close. Log file closed.");
+                    fileIsOpen = false; // Set only after successful close
+                    g_sdCardStatus = SD_OK;
+                } else {
+                    Serial.println("SdLoggingTask: Timeout or invalid HSPI mutex for file close! File may not be closed properly.");
+                    // g_sdCardStatus = SD_ERROR_CLOSE_MUTEX; // Optional new status
+                    // fileIsOpen might still be true, attempt close again next cycle if still not recording.
+                }
             }
             // If not recording and file is not open, just delay to prevent busy-waiting
             // This task will then wait for is_recording to become true.
