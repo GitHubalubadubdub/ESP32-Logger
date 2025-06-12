@@ -78,18 +78,18 @@ void setup() {
     tft.init(135, 240); // For ESP32-S3 Reverse TFT.
     Serial.println("After tft.init(135, 240)");
 
-    Serial.println("Before tft.setRotation(1)");
-    tft.setRotation(1); // Landscape
-    Serial.println("After tft.setRotation(1)");
-
-    #ifdef TFT_BL // Check if TFT_BL is defined (another common backlight macro)
-        Serial.println("Attempting to enable TFT backlight using TFT_BL pin...");
-        pinMode(TFT_BL, OUTPUT);
-        digitalWrite(TFT_BL, HIGH);
-        Serial.print("TFT_BL pin ("); Serial.print(TFT_BL); Serial.println(") set to HIGH.");
+    #ifdef TFT_BACKLITE // Check if TFT_BACKLITE is defined by pins_arduino.h
+        Serial.println("Attempting to enable TFT backlight using TFT_BACKLITE pin...");
+        pinMode(TFT_BACKLITE, OUTPUT);
+        digitalWrite(TFT_BACKLITE, HIGH);
+        Serial.print("TFT_BACKLITE pin ("); Serial.print(TFT_BACKLITE); Serial.println(") set to HIGH.");
     #else
-        Serial.println("TFT_BL macro not defined by board variant. Backlight assumption continues.");
+        Serial.println("Warning: TFT_BACKLITE macro not defined by board variant. Backlight might not enable.");
     #endif
+
+    Serial.println("Before tft.setRotation(3)");
+    tft.setRotation(3); // Landscape (or portrait depending on display mounting)
+    Serial.println("After tft.setRotation(3)");
 
     Serial.println("Before tft.fillScreen(ST77XX_BLACK)");
     tft.fillScreen(ST77XX_BLACK);
